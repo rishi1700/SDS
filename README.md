@@ -1,177 +1,57 @@
-# SDS-WS
+# SDS-WS User Guide
 
-SDS-WS is a desktop app for creating, mounting, unmounting, and deleting storage volumes.
+SDS-WS is a desktop app used to work with storage volumes.
 
-It supports:
+You can use it to:
+
+- add a storage node
+- create a volume
+- mount a volume
+- unmount a volume
+- delete a volume
+
+This guide is written in simple language and focuses only on how to use the app.
+
+## What You Need Before You Start
+
+Please keep these details ready:
+
+- storage node IP address
+- protocol you want to use
+- username and password if your protocol needs them
+
+The app supports:
 
 - `NFS`
 - `CIFS`
 - `iSCSI-Chap`
 - `iSCSI-NoChap`
 
-This guide is written in simple language so a person with little technical knowledge can follow it.
+## Basic Flow
 
-## What This App Does
+Most users will follow this order:
 
-You can use this app to:
+1. Open the app
+2. Add or select a storage node
+3. Create a volume
+4. Mount the volume
+5. Use the volume
+6. Unmount the volume when finished
+7. Delete the volume only if you no longer need it
 
-- connect to a storage node
-- create a new volume
-- mount a volume to your computer
-- unmount a volume
-- delete a volume
+## Open The App
 
-## Before You Start
+Start the SDS-WS app on your computer.
 
-Please make sure you know:
+When the app opens, you will usually:
 
-- the IP address of your storage node
-- the protocol you want to use
-- the username and password if your protocol needs credentials
+1. add a storage node if it is not already listed
+2. select the storage node
+3. reload volumes if needed
 
-## Supported Platforms
-
-- `Windows`
-- `Ubuntu / Linux`
-
-## 1. Windows Setup
-
-### What You Need
-
-- Windows computer
-- Python installed
-- internet access for Python packages
-
-### How To Check Python
-
-Open `Command Prompt` or `PowerShell` and run:
-
-```powershell
-py --version
-```
-
-If that does not work, install Python first.
-
-### Install Python Packages
-
-In the project folder, run:
-
-```powershell
-py -m pip install requests flask zeroconf pyinstaller
-```
-
-### Run The App on Windows
-
-In the project folder, run:
-
-```powershell
-py sds_gui.py
-```
-
-### Build a Windows Executable
-
-In the project folder, run:
-
-```powershell
-py -m PyInstaller --noconsole --onefile --name SDS-WS sds_gui.py `
-  --hidden-import computenode_service_client `
-  --hidden-import flask `
-  --hidden-import werkzeug.serving `
-  --hidden-import zeroconf `
-  --collect-all flask `
-  --collect-all werkzeug `
-  --collect-all zeroconf
-```
-
-After the build is complete, the executable will be in:
-
-```text
-dist\SDS-WS.exe
-```
-
-## 2. Ubuntu / Linux Setup
-
-### What You Need
-
-- Ubuntu or Linux system
-- Python 3
-- terminal access
-
-### Install System Packages
-
-Open a terminal and run:
-
-```bash
-sudo apt update
-sudo apt install -y python3 python3-venv python3-pip python3-tk iputils-ping open-iscsi cifs-utils nfs-common xdg-utils
-```
-
-### Run The App on Ubuntu / Linux
-
-In the project folder, run:
-
-```bash
-chmod +x run_ubuntu.sh
-./run_ubuntu.sh
-```
-
-This script:
-
-- creates a Python virtual environment if needed
-- installs Python packages
-- starts the app
-
-### Build a Linux Executable
-
-In the project folder, run:
-
-```bash
-chmod +x build_linux.sh
-./build_linux.sh
-```
-
-After the build is complete, the executable will be in:
-
-```text
-dist/SDS-WS
-```
-
-## 3. If You Are Using WSL2
-
-If you are using WSL2, the app can run only if GUI display is available.
-
-If you are on Windows 11 with WSLg, it usually works automatically.
-
-If the app says there is no display, restart WSL and try again:
-
-```bash
-wsl --shutdown
-```
-
-Then reopen Ubuntu and run:
-
-```bash
-./run_ubuntu.sh
-```
-
-## 4. First Time App Use
-
-When the app opens:
-
-1. Add or discover a storage node
-2. Select the storage node
-3. Reload volumes if needed
-4. Create or mount a volume
-
-## 5. How To Add a Storage Node
+## Add a Storage Node
 
 You need the storage node IP address.
-
-In the app:
-
-1. enter the storage node IP
-2. save it
-3. select it from the list
 
 Example:
 
@@ -179,47 +59,87 @@ Example:
 192.168.30.55
 ```
 
-## 6. How To Create a Volume
+In the app:
+
+1. enter the storage node IP address
+2. save it
+3. select it from the list
+
+After selecting the node, the app should show node details such as:
+
+- node IP
+- pool name
+- pool size
+
+## Create a Volume
 
 In the app:
 
-1. choose the storage node
+1. select the storage node
 2. enter a volume name
 3. enter the size
 4. choose the protocol
-5. if needed, enter username and password
+5. enter username and password if needed
 6. click create
 
-### Protocol Notes
+Use simple names for testing, such as:
 
-- `NFS`: usually no username/password
-- `CIFS`: usually needs username/password
-- `iSCSI-Chap`: needs username/password
-- `iSCSI-NoChap`: usually no username/password
+```text
+testvol1
+```
 
-## 7. How To Mount a Volume
+## Protocol Guide
+
+### NFS
+
+Usually does not need username or password.
+
+### CIFS
+
+Usually needs username and password.
+
+### iSCSI-Chap
+
+Needs username and password.
+
+### iSCSI-NoChap
+
+Usually does not need username or password.
+
+## Mount a Volume
 
 In the app:
 
-1. reload volumes
+1. reload the volume list if needed
 2. select the volume
 3. click mount
-4. if asked, enter credentials
+4. wait for the result message
 
-### Important iSCSI Note
+If the mount works, the app should show that the volume is mounted.
 
-For iSCSI, the connection may succeed before you see a usable drive/folder path.
+## Use the Mounted Volume
 
-This is normal in some cases, especially on Windows.
+After mounting:
 
-## 8. How To Unmount a Volume
+- for file-based protocols like `NFS` and `CIFS`, you should usually get a usable folder path
+- for `iSCSI`, the connection may succeed before you see a usable drive or folder
 
-In the app:
+If Windows shows a new drive, you can open it in File Explorer.
+
+If Linux shows a mount path, you can open that path with your file manager.
+
+## Unmount a Volume
+
+When you are finished using a volume:
 
 1. select the mounted volume
 2. click unmount
 
-## 9. How To Delete a Volume
+Wait for the app to confirm that the volume is no longer mounted.
+
+## Delete a Volume
+
+Delete a volume only when you no longer need it.
 
 In the app:
 
@@ -228,34 +148,44 @@ In the app:
 3. click delete
 4. confirm the deletion
 
-## 10. Common Problems
+## Common Messages and What They Mean
 
-### Windows: Python command does not work
+### Volume created successfully
 
-Try:
+The volume was created on the selected storage node.
 
-```powershell
-py --version
-```
+### Volume mounted successfully
 
-If it still fails, install Python.
+The app was able to mount the volume.
 
-### Ubuntu: `xdg-open` missing
+### Volume not mounted
 
-Run:
+The mount did not complete successfully.
 
-```bash
-sudo apt install -y xdg-utils
-```
+Check:
 
-### Ubuntu: Tkinter display error
+- the selected protocol
+- the username and password
+- the storage node IP
+- whether the volume really exists
 
-This means the Linux system cannot open GUI windows.
+## Windows iSCSI Notes
 
-If using WSL2:
+### `F:\ is not accessible` popup
 
-- make sure WSLg is working
-- restart WSL
+This message can be misleading.
+
+Sometimes Windows shows this even when the iSCSI connection itself has worked.
+
+This may mean:
+
+- the disk is connected but not ready yet
+- the disk has no drive letter yet
+- Windows still needs the disk to be initialized or formatted
+
+Do not assume the full mount failed just because of this popup.
+
+Check the app status and volume details first.
 
 ### iSCSI connected but no drive appears
 
@@ -263,86 +193,36 @@ This can happen if:
 
 - the disk is connected but not initialized
 - the drive letter is not assigned
-- the target is visible but not login-ready
+- Windows needs a little more time to finish preparing the disk
 
-### Windows: `F:\ is not accessible` popup
+## CHAP Notes
 
-This message can be misleading.
+If a `CHAP` volume fails to mount, possible reasons include:
 
-In some iSCSI cases, Windows may show this popup even though the iSCSI connection itself has already worked.
+- wrong username or password
+- target is not discoverable
+- storage side CHAP export is not set correctly
 
-This usually means one of these:
+## Good Testing Practice
 
-- the disk is connected but not ready yet
-- the disk has no drive letter yet
-- Windows needs the disk to be initialized or formatted first
+To avoid confusion during testing:
 
-If this happens, do not assume the whole mount failed immediately.
+- test one protocol at a time
+- use simple volume names
+- mount one new test volume first before testing many at once
+- note the exact error message shown by the app
 
-Check the app status message and the volume details first.
+## Main App Files
 
-### CHAP volume fails to mount
-
-This may happen if:
-
-- the CHAP target is not published correctly on the storage side
-- the username/password is wrong
-- the IQN/target is not discoverable
-
-## 11. Files In This Project
-
-Main files:
+Main files used by this app:
 
 - [sds_gui.py](/C:/Users/rishi/Documents/SDS/sds_gui.py)
 - [sdsClient.py](/C:/Users/rishi/Documents/SDS/sdsClient.py)
 - [computenode_service_client.py](/C:/Users/rishi/Documents/SDS/computenode_service_client.py)
 
-Helper files:
+## Final Advice
 
-- [run_ubuntu.sh](/C:/Users/rishi/Documents/SDS/run_ubuntu.sh)
-- [build_linux.sh](/C:/Users/rishi/Documents/SDS/build_linux.sh)
-- [requirements-ubuntu.txt](/C:/Users/rishi/Documents/SDS/requirements-ubuntu.txt)
-- [SDS-WS.spec](/C:/Users/rishi/Documents/SDS/SDS-WS.spec)
-- [SDS-WS-linux.spec](/C:/Users/rishi/Documents/SDS/SDS-WS-linux.spec)
-
-## 12. Quick Commands
-
-### Windows Run
-
-```powershell
-py sds_gui.py
-```
-
-### Windows Build
-
-```powershell
-py -m PyInstaller --noconsole --onefile --name SDS-WS sds_gui.py `
-  --hidden-import computenode_service_client `
-  --hidden-import flask `
-  --hidden-import werkzeug.serving `
-  --hidden-import zeroconf `
-  --collect-all flask `
-  --collect-all werkzeug `
-  --collect-all zeroconf
-```
-
-### Ubuntu Run
-
-```bash
-./run_ubuntu.sh
-```
-
-### Ubuntu Build
-
-```bash
-./build_linux.sh
-```
-
-## 13. Final Advice
-
-- Start with one storage node and one volume
-- Test one protocol at a time
-- Use simple volume names
-- If something fails, note the exact message shown in the app or terminal
-
-That makes troubleshooting much easier.
+- start simple
+- test one step at a time
+- read the exact app message carefully
+- if something fails, keep the screenshot or error text for troubleshooting
