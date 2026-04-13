@@ -265,6 +265,22 @@ This can happen if:
 - the drive letter is not assigned
 - the target is visible but not login-ready
 
+### Windows: `F:\ is not accessible` popup
+
+This message can be misleading.
+
+In some iSCSI cases, Windows may show this popup even though the iSCSI connection itself has already worked.
+
+This usually means one of these:
+
+- the disk is connected but not ready yet
+- the disk has no drive letter yet
+- Windows needs the disk to be initialized or formatted first
+
+If this happens, do not assume the whole mount failed immediately.
+
+Check the app status message and the volume details first.
+
 ### CHAP volume fails to mount
 
 This may happen if:
