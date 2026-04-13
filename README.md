@@ -65,11 +65,10 @@ In the app:
 2. save it
 3. select it from the list
 
-After selecting the node, the app should show node details such as:
+After selecting the node, the app may show basic node details such as:
 
 - node IP
-- pool name
-- pool size
+- other storage information, depending on what the app receives
 
 ## Create a Volume
 
