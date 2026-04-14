@@ -629,6 +629,9 @@ def main():
 
     try:
         args.func(args)
+    except RuntimeError as e:
+        print(f"\nError: {e}")
+        sys.exit(1)
     finally:
         flask_process.terminate()
         flask_process.wait()
