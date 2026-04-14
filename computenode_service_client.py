@@ -44,8 +44,7 @@ SDS_VOLUME_MOUNT_PATH = "/mnt/"
 
 def get_mount_base_path():
     if os.path.exists(SDS_VOLUME_MOUNT_PATH):
-        if os.access(SDS_VOLUME_MOUNT_PATH, os.W_OK | os.X_OK):
-            return SDS_VOLUME_MOUNT_PATH
+        return SDS_VOLUME_MOUNT_PATH
     return os.getcwd()
 
 def sprint (a,b=0):
