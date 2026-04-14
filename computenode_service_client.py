@@ -42,19 +42,10 @@ PORT = 4002      # Flask Port
 
 SDS_VOLUME_MOUNT_PATH = "/mnt/"
 
-def _require_command(command, package, install_hint=None):
-    """Raise a clear RuntimeError if a required system command is not installed."""
-    if shutil.which(command) is None:
-        hint = install_hint or f"sudo apt install {package} -y"
-        raise RuntimeError(
-            f"Required package '{package}' is not installed. "
-            f"Install it with:  {hint}"
-        )
-
-
 def get_mount_base_path():
     if os.path.exists(SDS_VOLUME_MOUNT_PATH):
-        return SDS_VOLUME_MOUNT_PATH
+        if os.access(SDS_VOLUME_MOUNT_PATH, os.W_OK | os.X_OK):
+            return SDS_VOLUME_MOUNT_PATH
     return os.getcwd()
 
 def sprint (a,b=0):
@@ -364,7 +355,6 @@ def find_mount_path(remote_ip, volume_name):
             return mount_path
         else:
             # Linux or Mac OS
-            _require_command("showmount", "nfs-common")
             result = subprocess.run(
                 ['showmount', '-e', remote_ip],
                 stdout=subprocess.PIPE,
@@ -389,22 +379,20 @@ def find_mount_path(remote_ip, volume_name):
     
 def create_mount_point(path):
     """Create the mount point if it doesn't exist."""
+    wERC=0
     try:
-        if not os.path.exists(path):
-            if sys.platform.startswith("win"):
-                os.makedirs(path)
-            else:
-                result = subprocess.run(["sudo", "mkdir", "-p", path])
-                if result.returncode != 0:
-                    sprint(f"Failed to create mount point: {path}")
-                    return -1
-            sprint(f"Created mount point: {path}")
-        else:
-            sprint(f"Mount point {path} already exists.")
-        return 0
+      if not os.path.exists(path):
+        os.makedirs(path)
+        sprint(f"Created mount point: {path}")
+        return wERC
+      else:
+        sprint(f"Mount point {path} already exists.")
+        return wERC
+        
+        
     except Exception as e:
-        sprint(f"create mount point except: {e}")
-        return -1
+      sprint(f"create mount point except: {e}")
+      return -1
     
 def ping_host(host, timeout=2,max_retries=1):
     """Ping the host until it responds or until max retries are reached."""
@@ -952,7 +940,6 @@ def mount_nfs(remote_ip, remote_path, local_path, protocol,wait_time=5):
             mount_cmd = ["mount_nfs","-o", "nolocks,soft,timeo=30,vers=3",f"{remote_ip}:{remote_path}",local_path]
         elif sys.platform.startswith("linux"):
             # Linux
-            _require_command("showmount", "nfs-common")
             if os.path.ismount(local_path):
                 return -1
             mount_cmd = ['sudo', 'mount', '-t', protocol,'-o','soft,bg,timeo=30,fsc', f'{remote_ip}:{remote_path}', local_path]
@@ -1000,7 +987,8 @@ def mount_cifs(remote_ip, remote_path, loc_path, protocol,user,password,wait_tim
                 command = f"mount_smbfs //{user}:{password}@{remote_ip}/{remote_path} {loc_path}"
             elif sys.platform.startswith("linux"):
                 # Linux
-                _require_command("mount.cifs", "cifs-utils")
+                # arg0=" -t cifs -o username=guest -o password=hello123 //192.168.30.6/cifs1 /mnt/remote/mnt/cifs1"
+
                 if os.path.ismount(loc_path):
                     return -1
                 arg1='-t cifs '
@@ -1150,11 +1138,11 @@ def mount_iscsi_chap(remote_ip, local_mnt_path, iqn, user, password, volume_name
             return 0
         
         else:
-            # Ubuntu/Linux OS
-            _require_command("iscsiadm", "open-iscsi")
+            # Ubunut/Linix OS
+
             before_disks = get_block_devices()
             sprint("Disks before login", before_disks)
-
+        
             if not iscsi_session_exists(iqn):
                 # Login using the REAL IQN
                 login_cmd = ["sudo", "iscsiadm", "-m", "node", "-T", iqn, "-p", remote_ip, "--login"]
@@ -1279,11 +1267,10 @@ def mount_iscsi_nochap(remote_ip, local_mnt_path, iqn, wait_time):
 
         
         else:
-            # Ubuntu/Linux OS
-            _require_command("iscsiadm", "open-iscsi")
+            # Ubunut/Linix OS
             before_disks = get_block_devices()
             sprint("Disks before login", before_disks)
-
+        
             if not iscsi_session_exists(iqn):
                 # Login using the REAL IQN
                 login_cmd = ["sudo", "iscsiadm", "-m", "node", "-T", iqn, "-p", remote_ip, "--login"]
