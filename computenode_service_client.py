@@ -42,6 +42,16 @@ PORT = 4002      # Flask Port
 
 SDS_VOLUME_MOUNT_PATH = "/mnt/"
 
+def _require_command(command, package, install_hint=None):
+    """Raise a clear RuntimeError if a required system command is not installed."""
+    if shutil.which(command) is None:
+        hint = install_hint or f"sudo apt install {package} -y"
+        raise RuntimeError(
+            f"Required package '{package}' is not installed. "
+            f"Install it with:  {hint}"
+        )
+
+
 def get_mount_base_path():
     if os.path.exists(SDS_VOLUME_MOUNT_PATH):
         return SDS_VOLUME_MOUNT_PATH
@@ -354,6 +364,7 @@ def find_mount_path(remote_ip, volume_name):
             return mount_path
         else:
             # Linux or Mac OS
+            _require_command("showmount", "nfs-common")
             result = subprocess.run(
                 ['showmount', '-e', remote_ip],
                 stdout=subprocess.PIPE,
@@ -939,6 +950,7 @@ def mount_nfs(remote_ip, remote_path, local_path, protocol,wait_time=5):
             mount_cmd = ["mount_nfs","-o", "nolocks,soft,timeo=30,vers=3",f"{remote_ip}:{remote_path}",local_path]
         elif sys.platform.startswith("linux"):
             # Linux
+            _require_command("showmount", "nfs-common")
             if os.path.ismount(local_path):
                 return -1
             mount_cmd = ['sudo', 'mount', '-t', protocol,'-o','soft,bg,timeo=30,fsc', f'{remote_ip}:{remote_path}', local_path]
@@ -986,8 +998,7 @@ def mount_cifs(remote_ip, remote_path, loc_path, protocol,user,password,wait_tim
                 command = f"mount_smbfs //{user}:{password}@{remote_ip}/{remote_path} {loc_path}"
             elif sys.platform.startswith("linux"):
                 # Linux
-                # arg0=" -t cifs -o username=guest -o password=hello123 //192.168.30.6/cifs1 /mnt/remote/mnt/cifs1"
-
+                _require_command("mount.cifs", "cifs-utils")
                 if os.path.ismount(loc_path):
                     return -1
                 arg1='-t cifs '
@@ -1137,11 +1148,11 @@ def mount_iscsi_chap(remote_ip, local_mnt_path, iqn, user, password, volume_name
             return 0
         
         else:
-            # Ubunut/Linix OS
-
+            # Ubuntu/Linux OS
+            _require_command("iscsiadm", "open-iscsi")
             before_disks = get_block_devices()
             sprint("Disks before login", before_disks)
-        
+
             if not iscsi_session_exists(iqn):
                 # Login using the REAL IQN
                 login_cmd = ["sudo", "iscsiadm", "-m", "node", "-T", iqn, "-p", remote_ip, "--login"]
@@ -1266,10 +1277,11 @@ def mount_iscsi_nochap(remote_ip, local_mnt_path, iqn, wait_time):
 
         
         else:
-            # Ubunut/Linix OS
+            # Ubuntu/Linux OS
+            _require_command("iscsiadm", "open-iscsi")
             before_disks = get_block_devices()
             sprint("Disks before login", before_disks)
-        
+
             if not iscsi_session_exists(iqn):
                 # Login using the REAL IQN
                 login_cmd = ["sudo", "iscsiadm", "-m", "node", "-T", iqn, "-p", remote_ip, "--login"]
