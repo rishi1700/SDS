@@ -498,10 +498,7 @@ def cmd_delete_volume(args):
         loader_thread.join()
 
         if response.get("status") == "fail":
-            print("\nStorage Volume Not Deleted ")
-            print("Message : ",response.get("description"))
-            print("\n")
-            return
+            raise RuntimeError(response.get("description") or "Storage node refused to delete the volume. Unmount it first.")
         
         # print(f"\nStorage Volume Delete Response : {response}")
         print("\nVolume Deleted Successfully On ....")
@@ -514,6 +511,7 @@ def cmd_delete_volume(args):
 
     except Exception as e:
         print(f"Exception in deleting volume : {str(e)}")
+        raise
 
 
 # ---------------------------
