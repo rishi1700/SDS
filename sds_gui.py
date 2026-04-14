@@ -2376,6 +2376,12 @@ class SDSApp(tk.Tk):
                     else:
                         print("Windows drive already unmapped (no drive letter recorded).")
 
+                    # Tell the storage node to turn the volume OFF
+                    try:
+                        host = self._resolve_node_host(node) if node else ""
+                        sdsClient.cmd_unmount_volume(SimpleNamespace(name=vol, Snode=host, protocol=protocol))
+                    except Exception as e:
+                        print(f"Storage node OFF request failed (local unmount succeeded): {e}")
                     self.mounted_targets.pop(vol, None)
                     self._schedule_save_state()
                     return
@@ -2405,7 +2411,14 @@ class SDSApp(tk.Tk):
                     )
                     self._run_powershell(ps_disconnect, timeout=60)
 
-                    # 3) Clear GUI state. Do not leave placeholders.
+                    # 3) Tell the storage node to turn the volume OFF
+                    try:
+                        host = self._resolve_node_host(node) if node else ""
+                        sdsClient.cmd_unmount_volume(SimpleNamespace(name=vol, Snode=host, protocol=protocol))
+                    except Exception as e:
+                        print(f"Storage node OFF request failed (local unmount succeeded): {e}")
+
+                    # 4) Clear GUI state. Do not leave placeholders.
                     self.mounted_targets.pop(vol, None)
                     self._schedule_save_state()
                     return
