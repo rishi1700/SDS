@@ -2449,6 +2449,11 @@ class SDSApp(tk.Tk):
 
             self.mounted_targets.pop(vol, None)
             self._schedule_save_state()
+            # Tell the storage node to turn the volume OFF
+            try:
+                sdsClient.cmd_unmount_volume(SimpleNamespace(name=vol, Snode=host, protocol=protocol))
+            except Exception as e:
+                print(f"Storage node OFF request failed (local unmount succeeded): {e}")
 
         self._run_task(task, "Un-mounting volume...")
 
@@ -2474,84 +2479,10 @@ class SDSApp(tk.Tk):
             return
 
         def task():
-            # Before delete: If mounted locally, best-effort unmount locally and controller-side OFF/unmount.
             self._prepare_array(node)
             host = self._resolve_node_host(node)
-            # If mounted locally, unmount first to avoid "Cannot delete running volume".
-            if name in (self.mounted_targets or {}):
-                try:
-                    self._ensure_compute_service()
-                    local_path = (self.mounted_targets.get(name) or "").strip()
-                    if sys.platform.startswith("win") and local_path:
-                        if len(local_path) == 1 and local_path.isalpha():
-                            local_path = f"{local_path}:"
-                        elif len(local_path) >= 2 and local_path[1] == ":":
-                            local_path = local_path[:2]
-                    payload_um = {
-                        "volumeName": name,
-                        "protocol_name": protocol or self._default_protocol_for_platform(),
-                        "remote_ip": host,
-                        "host_name": host,
-                        "local_path": local_path,
-                        "url": getattr(sdsClient, "URL", ""),
-                    }
-                    _ = self._post_json(f"{COMPUTE_SERVICE_URL}/unmountVolume", payload_um, timeout=40) or {}
-                except Exception:
-                    pass
-                # Remove from local mounted map regardless (best effort)
-                try:
-                    self.mounted_targets.pop(name, None)
-                    self._schedule_save_state()
-                except Exception:
-                    pass
-            # Unmount locally if needed
-            if name in self.mounted_targets:
-                self._ensure_compute_service()
-                local_path = (self.mounted_targets.get(name) or "").strip()
-                if sys.platform.startswith("win") and local_path:
-                    local_path = local_path.strip()
-                    if len(local_path) == 1 and local_path.isalpha():
-                        local_path = f"{local_path}:"
-                    elif len(local_path) >= 2 and local_path[1] == ":":
-                        local_path = local_path[:2]
-                payload = {
-                    "volumeName": name,
-                    "protocol_name": protocol or self._default_protocol_for_platform(),
-                    "remote_ip": host,
-                    "host_name": host,
-                    "local_path": local_path,
-                    "url": getattr(sdsClient, "URL", ""),
-                }
-                resp = self._post_json(f"{COMPUTE_SERVICE_URL}/unmountVolume", payload, timeout=40) or {}
-                explicit_status = str(resp.get("status") or "").lower().strip()
-                http_ok = (resp.get("http_status") == 200)
-                msg_lower = str(resp.get("message") or "").lower()
-                if not explicit_status and http_ok:
-                    for bad in ("fail", "error", "already", "cannot", "not mounted"):
-                        if bad in msg_lower:
-                            raise RuntimeError(resp.get("message") or "Unmount process failed")
-                if explicit_status in ("failure", "error", "failed"):
-                    raise RuntimeError(resp.get("message") or "Unmount process failed")
-                if (explicit_status and explicit_status != "success") and not http_ok:
-                    raise RuntimeError(resp.get("message") or "Unmount process failed")
 
-            # Best-effort controller-side OFF/UNMOUNT
-            try:
-                ns = SimpleNamespace(name=name, Snode=host, protocol=protocol)
-                if hasattr(sdsClient, "cmd_off_volume"):
-                    try:
-                        sdsClient.cmd_off_volume(ns)
-                    except Exception:
-                        pass
-                elif hasattr(sdsClient, "cmd_unmount_volume"):
-                    try:
-                        sdsClient.cmd_unmount_volume(ns)
-                    except Exception:
-                        pass
-            except Exception:
-                pass
-
-            # Now delete
+            # 1. Delete volume from the storage node
             sdsClient.cmd_delete_volume(
                 SimpleNamespace(
                     name=name,
@@ -2560,7 +2491,23 @@ class SDSApp(tk.Tk):
                 )
             )
 
-            # Best-effort: clean local GUI state only (does not affect the storage array)
+            # 2. Remove the /mnt directory from the compute node (best-effort)
+            try:
+                self._ensure_compute_service()
+                vol_meta = self.volume_meta.get(name) or {}
+                payload_del = {
+                    "volumeName": name,
+                    "node_ip": host,
+                    "iqn": vol_meta.get("iqn") or "",
+                    "user_name": vol_meta.get("user_name") or "",
+                    "password": vol_meta.get("password") or "",
+                    "protocol_name": protocol or self._default_protocol_for_platform(),
+                }
+                self._post_json(f"{COMPUTE_SERVICE_URL}/deleteFolder", payload_del, timeout=40)
+            except Exception as e:
+                print(f"Compute node folder cleanup failed (volume deleted from storage): {e}")
+
+            # 3. Clean GUI state
             def _done():
                 try:
                     self.mounted_targets.pop(name, None)
