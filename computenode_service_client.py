@@ -389,20 +389,22 @@ def find_mount_path(remote_ip, volume_name):
     
 def create_mount_point(path):
     """Create the mount point if it doesn't exist."""
-    wERC=0
     try:
-      if not os.path.exists(path):
-        os.makedirs(path)
-        sprint(f"Created mount point: {path}")
-        return wERC
-      else:
-        sprint(f"Mount point {path} already exists.")
-        return wERC
-        
-        
+        if not os.path.exists(path):
+            if sys.platform.startswith("win"):
+                os.makedirs(path)
+            else:
+                result = subprocess.run(["sudo", "mkdir", "-p", path])
+                if result.returncode != 0:
+                    sprint(f"Failed to create mount point: {path}")
+                    return -1
+            sprint(f"Created mount point: {path}")
+        else:
+            sprint(f"Mount point {path} already exists.")
+        return 0
     except Exception as e:
-      sprint(f"create mount point except: {e}")
-      return -1
+        sprint(f"create mount point except: {e}")
+        return -1
     
 def ping_host(host, timeout=2,max_retries=1):
     """Ping the host until it responds or until max retries are reached."""
