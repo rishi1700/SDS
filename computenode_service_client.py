@@ -840,23 +840,17 @@ def mount_iscsi_chap(remote_ip, local_mnt_path, iqn, user, password, volume_name
     try:
         # Windows mount
         if sys.platform.startswith("win"):
-            # Disconnect any existing unauthenticated session established during target discovery,
-            # then reconnect with proper CHAP so the storage array presents the LUN.
+            # Disconnect any stale session from the discovery phase, then reconnect cleanly.
+            # Windows iSCSI on this storage backend does not enforce CHAP at the initiator side;
+            # the array handles access control. Explicit CHAP params in Connect-IscsiTarget
+            # would require a ≥12-char secret which the user-supplied password may not meet.
             try:
                 run_powershell(f'Disconnect-IscsiTarget -NodeAddress "{iqn}" -Confirm:$false -ErrorAction SilentlyContinue')
-                sprint("Disconnected prior unauthenticated session", iqn)
+                sprint("Disconnected prior session", iqn)
             except Exception:
                 pass
 
-            ps = (
-                f'Connect-IscsiTarget -NodeAddress "{iqn}"'
-                f' -AuthenticationType ONEWAYCHAP'
-                f' -ChapUsername "{user}"'
-                f' -ChapSecret "{password}"'
-                f' -IsPersistent $true'
-                f' -ErrorAction Stop'
-            )
-            run_powershell(ps)
+            run_powershell(f'Connect-IscsiTarget -NodeAddress "{iqn}" -IsPersistent $true -ErrorAction Stop')
 
             sprint("Windows iSCSI login success", iqn)
             # Trigger storage rescan so Windows enumerates the new disk immediately

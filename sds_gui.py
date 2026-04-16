@@ -2318,7 +2318,7 @@ class SDSApp(tk.Tk):
                 else False,
             }
 
-            resp = self._post_json(f"{COMPUTE_SERVICE_URL}/mountVolume", payload, timeout=40) or {}
+            resp = self._post_json(f"{COMPUTE_SERVICE_URL}/mountVolume", payload, timeout=120) or {}
 
             explicit_status = str(resp.get("status") or "").lower().strip()
             http_ok = (resp.get("http_status") == 200)
