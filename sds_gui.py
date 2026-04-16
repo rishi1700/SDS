@@ -1999,11 +1999,17 @@ class SDSApp(tk.Tk):
         return ""
 
     def _windows_iscsi_snapshot_disks(self):
-        """Return a dict of iSCSI disk Number -> PartitionStyle (RAW/GPT/etc)."""
+        """Return a dict of disk Number -> PartitionStyle for ALL disks.
+
+        Intentionally not filtered by BusType: Windows does not consistently
+        report iSCSI disks as BusType='iSCSI' across all initiator/driver versions.
+        Callers use before/after diffs to identify newly appeared disks.
+        """
         if not sys.platform.startswith("win"):
             return {}
-        ps = "Get-Disk | Where-Object {$_.BusType -eq 'iSCSI'} | Select-Object Number,PartitionStyle | ConvertTo-Json"
+        ps = "Get-Disk | Select-Object Number,PartitionStyle | ConvertTo-Json"
         rc, out, err = self._run_powershell(ps, timeout=30)
+        print(f"[iSCSI] snapshot rc={rc}, out={repr((out or '')[:200])}, err={repr((err or '')[:100])}")
         if rc != 0 or not out.strip():
             return {}
         try:
@@ -2325,6 +2331,7 @@ class SDSApp(tk.Tk):
                 if not self._is_real_windows_drive(tmp_mp):
                     # Windows may take several seconds to enumerate the iSCSI disk after session is established.
                     # Retry the snapshot until a new disk appears (up to ~16 seconds total).
+                    print(f"[iSCSI] disk_before snapshot: {disk_before}")
                     disk_after = {}
                     for _snap_try in range(5):
                         disk_after = self._windows_iscsi_snapshot_disks()
@@ -2332,6 +2339,8 @@ class SDSApp(tk.Tk):
                             break
                         print(f"[iSCSI] Waiting for new disk to appear in Windows (attempt {_snap_try + 1}/5)...")
                         time.sleep(3)
+                    if not any(n not in disk_before for n in disk_after):
+                        print(f"[iSCSI] No new disk appeared after 15s. disk_before={disk_before}, disk_after={disk_after}")
                     iscsi_drive = self._windows_iscsi_auto_init_new_raw_disk(disk_before, disk_after)
                 if iscsi_drive:
                     print(f"Windows iSCSI disk auto-initialized successfully. Drive: {iscsi_drive}")
