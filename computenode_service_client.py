@@ -840,20 +840,9 @@ def mount_iscsi_chap(remote_ip, local_mnt_path, iqn, user, password, volume_name
     try:
         # Windows mount
         if sys.platform.startswith("win"):
-            # Disconnect any stale session from the discovery phase, then reconnect cleanly.
-            # Windows iSCSI on this storage backend does not enforce CHAP at the initiator side;
-            # the array handles access control. Explicit CHAP params in Connect-IscsiTarget
-            # would require a ≥12-char secret which the user-supplied password may not meet.
-            try:
-                run_powershell(f'Disconnect-IscsiTarget -NodeAddress "{iqn}" -Confirm:$false -ErrorAction SilentlyContinue')
-                sprint("Disconnected prior session", iqn)
-            except Exception:
-                pass
-
-            run_powershell(f'Connect-IscsiTarget -NodeAddress "{iqn}" -IsPersistent $true -ErrorAction Stop')
-
+            # Session is already established by ShowiSCSIChapMount.
+            # Just trigger a storage rescan so Windows enumerates the new disk.
             sprint("Windows iSCSI login success", iqn)
-            # Trigger storage rescan so Windows enumerates the new disk immediately
             try:
                 run_powershell("Update-HostStorageCache")
             except Exception:
@@ -1172,7 +1161,7 @@ def mount_process(volumeName, protcol_name,remote_ip, host_name, user_name, ip, 
             res = ensure_iscsid_running()
             if res != 0:
                 sprint("iscsid service is not running", "")
-                return -1, "iscsid service is not running"
+                return -1, "", "iscsid service is not running"
 
     drop=False
     if drop ==True:
@@ -1280,13 +1269,13 @@ def mount_process(volumeName, protcol_name,remote_ip, host_name, user_name, ip, 
                 sprint(f"Unable to mount iSCSI Chap volume.{res}",myTries)
                 time.sleep(2)
                 myTries=myTries+1
-                return -1, error_message
+                return -1, local_mnt_path, error_message
         else:
             error_message = "Failed in CHAP or IQN not found"
             sprint(error_message,"")
             return -1, local_mnt_path, error_message
 
-    
+
     while (waitPing==True and  protcol_name=='iSCSI-NoChap'):
         status, iqn = ShowiSCSINoChapMount(remote_ip,ip,volumeName)
         if status == 0 and iqn:
@@ -1301,12 +1290,12 @@ def mount_process(volumeName, protcol_name,remote_ip, host_name, user_name, ip, 
                 sprint(f"Unable to mount iSCSI No chap volume.{res}",myTries)
                 time.sleep(2)
                 myTries=myTries+1
-                return -1, error_message
+                return -1, local_mnt_path, error_message
         else:
             error_message = "Failed in CHAP or IQN not found"
             sprint(error_message,"")
             return -1, local_mnt_path, error_message
-        
+
     if res==0:
         sprint ("write completed correctly") 
         return 0, local_mnt_path, error_message
