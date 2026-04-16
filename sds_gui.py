@@ -259,7 +259,7 @@ class SDSApp(tk.Tk):
                 pass
 
             # Auto-hide after a short delay
-            self._completion_job = self.after(1400, self._hide_completion)
+            self._completion_job = self.after(2500, self._hide_completion)
         except Exception:
             return
 

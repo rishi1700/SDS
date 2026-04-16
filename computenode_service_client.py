@@ -1467,14 +1467,11 @@ def deleteVolumeFolder(path, remote_ip, iqn, user_name, password, protocol_name)
                     return -1
             
             elif protocol_name == "CIFS":
+                if not path:
+                    # Drive already unmounted — no folder to clean up on Windows CIFS
+                    return 0
                 try:
-                    cmd = [
-                        "cmd", "/c",
-                        "net", "use",
-                        path,
-                        "/delete", "/y"
-                    ]
-
+                    cmd = ["cmd", "/c", "net", "use", path, "/delete", "/y"]
                     subprocess.run(cmd, check=True)
                     sprint("Windows drive deleted:", path)
                     return 0
@@ -1547,7 +1544,7 @@ def unmountVolume():
         response_data = {"status": "failure", "message": str(e), "unmount_path" : "N/A"}
         return response_data
 
-@app.route("/deleteFolder", methods=["DELETE"])
+@app.route("/deleteFolder", methods=["DELETE", "POST"])
 def deleteFolder():
     try:
         data = request.get_json()
