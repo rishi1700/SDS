@@ -2469,11 +2469,19 @@ class SDSApp(tk.Tk):
                 # Unknown protocol on Windows
                 raise RuntimeError(f"Unsupported protocol for unmount on Windows: {protocol or '(unknown)'}")
 
-            # --- Non-Windows fallback: use previous behavior if present (best-effort) ---
-            # macOS/Linux: call compute-node unmount best-effort, then clear state
+            # --- Non-Windows: let the storage node callback do the real unmount ---
+            # Call cmd_unmount_volume first so the storage node fires its /unmountVolume
+            # callback while the volume is still mounted. The direct compute-service call
+            # below then acts as a fallback (unmount_process returns success if already unmounted).
+            self._ensure_compute_service()
+            host = self._resolve_node_host(node) if node else ""
             try:
-                self._ensure_compute_service()
-                host = self._resolve_node_host(node) if node else ""
+                sdsClient.cmd_unmount_volume(SimpleNamespace(name=vol, Snode=host, protocol=protocol))
+            except Exception as e:
+                print(f"Storage node OFF request failed, will try direct unmount: {e}")
+
+            # Fallback: call compute service directly in case the callback didn't fire
+            try:
                 payload = {
                     "volumeName": vol,
                     "protocol_name": protocol or self._default_protocol_for_platform(),
@@ -2492,11 +2500,6 @@ class SDSApp(tk.Tk):
 
             self.mounted_targets.pop(vol, None)
             self._schedule_save_state()
-            # Tell the storage node to turn the volume OFF
-            try:
-                sdsClient.cmd_unmount_volume(SimpleNamespace(name=vol, Snode=host, protocol=protocol))
-            except Exception as e:
-                print(f"Storage node OFF request failed (local unmount succeeded): {e}")
 
         self._run_task(task, "Un-mounting volume...")
 
