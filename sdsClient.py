@@ -384,6 +384,16 @@ def cmd_mount_volume(args):
     
         payload = {"controller_id" : controller_id,"volumeId" : volumeId,"volumeType" : volumeType,"state" : 6}
 
+        # Sync the SDS database with the storage array before triggering the mount.
+        # PUT /onOff_SN_Volume looks up the host in the SDS DB (not the storage array),
+        # so newly created hosts from create_SN_Host won't be found until the DB is synced.
+        try:
+            node_ip = getattr(args, "Snode", None)
+            if node_ip:
+                requests.post(URL + "/storage-nodes", json={"node_ip": node_ip}, timeout=15)
+        except Exception:
+            pass
+
         stop_event = threading.Event()
         loader_thread = threading.Thread(target=spinner, args=("Mounting SDS Volume...", stop_event))
         loader_thread.start()
@@ -439,6 +449,13 @@ def cmd_unmount_volume(args):
 
     
         payload = {"controller_id" : controller_id,"volumeId" : volumeId,"volumeType" : volumeType,"state" : 4}
+
+        try:
+            node_ip = getattr(args, "Snode", None)
+            if node_ip:
+                requests.post(URL + "/storage-nodes", json={"node_ip": node_ip}, timeout=15)
+        except Exception:
+            pass
 
         stop_event = threading.Event()
         loader_thread = threading.Thread(target=spinner, args=("Unmounting SDS Volume...", stop_event))
