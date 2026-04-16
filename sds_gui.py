@@ -2336,11 +2336,11 @@ class SDSApp(tk.Tk):
             mount_path = (resp.get("mount_path") or resp.get("mountPoint") or resp.get("mountpoint") or "").strip()
 
             # iSCSI is not a filesystem path until disk is initialized/partitioned.
-            # Some compute-side flows return a placeholder like 'iSCSI' — do NOT show/store it.
+            # Compute-side may return a status string like 'Session Logged in successfully' — clear it.
             if str(protocol).startswith("iSCSI"):
                 if iscsi_drive:
                     mount_path = iscsi_drive
-                elif mount_path.lower() == "iscsi":
+                elif not self._is_real_windows_drive(mount_path):
                     mount_path = ""
 
             # Normalize Windows drive letters
@@ -2380,11 +2380,9 @@ class SDSApp(tk.Tk):
                         self.mounted_targets[name] = mount_path
                     else:
                         self.mount_path_var.set("Mount path: (iSCSI connected — disk not initialized)")
-                        # Do not store placeholder mount path
-                        try:
-                            self.mounted_targets.pop(name, None)
-                        except Exception:
-                            pass
+                        # Keep volume in mounted_targets with empty path so unmount is available.
+                        # Windows iSCSI disconnect uses volume name matching, not a path.
+                        self.mounted_targets[name] = ""
                 else:
                     self.mount_path_var.set(f"Mount path: {mount_path or '-'}")
                     if mount_path:
