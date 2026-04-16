@@ -778,13 +778,24 @@ def mount_cifs(remote_ip, remote_path, loc_path, protocol,user,password,wait_tim
                 command='mount '+arg0
 
             sprint (command,0)
-            p = subprocess.Popen([command],shell=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
-            output = p.stdout.read()
-            p.wait()
-            sprint(output, 0)
-            if p.returncode != 0:
+            # Retry loop: storage node may still be setting up the Samba share
+            # when cmd_mount_volume (state=6) returns, so the first attempt can
+            # fail with "does not exist". Retry a few times before giving up.
+            _MAX_CIFS_RETRIES = 4
+            _CIFS_RETRY_DELAY = 5  # seconds between retries
+            for _attempt in range(_MAX_CIFS_RETRIES):
+                p = subprocess.Popen([command],shell=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
+                output = p.stdout.read()
+                p.wait()
+                sprint(output, 0)
+                if p.returncode == 0:
+                    break
                 sprint(f"CIFS mount command failed with exit code {p.returncode}", 0)
-                return -1
+                if b"does not exist" in output and _attempt < _MAX_CIFS_RETRIES - 1:
+                    sprint(f"CIFS share not ready, retrying in {_CIFS_RETRY_DELAY}s (attempt {_attempt+1}/{_MAX_CIFS_RETRIES})", 0)
+                    time.sleep(_CIFS_RETRY_DELAY)
+                else:
+                    return -1
             # Verify the mount actually succeeded
             if os.path.ismount(loc_path):
                 return 0
