@@ -850,6 +850,11 @@ def mount_iscsi_chap(remote_ip, local_mnt_path, iqn, user, password, volume_name
             ])
 
             sprint("Windows iSCSI login success", iqn)
+            # Trigger storage rescan so Windows enumerates the new disk immediately
+            try:
+                run_powershell("Update-HostStorageCache")
+            except Exception:
+                pass
             return 0
 
         elif sys.platform.startswith("darwin"):
@@ -1030,6 +1035,11 @@ def mount_iscsi_nochap(remote_ip, local_mnt_path, iqn, wait_time):
 
             # bring disk online + format handled separately
             sprint("Windows iSCSI No Chap login success", iqn)
+            # Trigger storage rescan so Windows enumerates the new disk immediately
+            try:
+                run_powershell("Update-HostStorageCache")
+            except Exception:
+                pass
             return 0
         
         elif sys.platform.startswith("darwin"):

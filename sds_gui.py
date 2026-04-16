@@ -2334,6 +2334,8 @@ class SDSApp(tk.Tk):
                     print(f"[iSCSI] disk_before snapshot: {disk_before}")
                     disk_after = {}
                     for _snap_try in range(5):
+                        # Force Windows to rescan storage so the newly connected iSCSI disk appears
+                        self._run_powershell("Update-HostStorageCache", timeout=20)
                         disk_after = self._windows_iscsi_snapshot_disks()
                         if any(n not in disk_before for n in disk_after):
                             break
