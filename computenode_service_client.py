@@ -41,6 +41,17 @@ def get_mount_base_path():
         return SDS_VOLUME_MOUNT_PATH
     return os.getcwd()
 
+
+def _resolve_system_command(command_name):
+    cmd = shutil.which(command_name)
+    if cmd:
+        return cmd
+    for base in ("/usr/sbin", "/usr/bin", "/sbin", "/bin", "/usr/local/sbin", "/usr/local/bin"):
+        candidate = os.path.join(base, command_name)
+        if os.path.exists(candidate) and os.access(candidate, os.X_OK):
+            return candidate
+    return command_name
+
 def sprint (a,b=0):
     x=True
     if x==True:
@@ -127,7 +138,7 @@ def find_mount_path(remote_ip, volume_name):
         else:
             # Linux or Mac OS
             result = subprocess.run(
-                ['showmount', '-e', remote_ip],
+                [_resolve_system_command('showmount'), '-e', remote_ip],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 universal_newlines=True,
@@ -144,6 +155,9 @@ def find_mount_path(remote_ip, volume_name):
     except subprocess.CalledProcessError as e:
         sprint(f"Error running showmount: {e.stderr}")
         return None
+    except FileNotFoundError:
+        sprint("Required tool 'showmount' not found. Please install package 'nfs-common'.")
+        return None
     except Exception as e:
         sprint("Exception in read mount path",e)
         return None
@@ -154,7 +168,7 @@ def create_mount_point(path):
     try:
       if not os.path.exists(path):
         if sys.platform.startswith("linux"):
-            subprocess.run(["sudo", "mkdir", "-p", path], check=True)
+            subprocess.run([_resolve_system_command("sudo"), "mkdir", "-p", path], check=True)
         else:
             os.makedirs(path)
         sprint(f"Created mount point: {path}")
@@ -164,6 +178,12 @@ def create_mount_point(path):
         return wERC
         
         
+    except subprocess.CalledProcessError as e:
+      if sys.platform.startswith("linux"):
+        sprint(f"create mount point except: Unable to create {path}. Please run the app with permission to write there or create the folder manually. ({e})")
+      else:
+        sprint(f"create mount point except: {e}")
+      return -1
     except Exception as e:
       sprint(f"create mount point except: {e}")
       return -1
