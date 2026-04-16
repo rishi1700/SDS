@@ -298,6 +298,14 @@ def is_mounted(path):
             return os.path.ismount(path)
     except Exception:
         return False
+
+
+def wait_until_unmounted(path, retries=10, delay=0.3):
+    for _ in range(retries):
+        if not is_mounted(path):
+            return True
+        time.sleep(delay)
+    return not is_mounted(path)
     
 def get_iscsi_windwos_iqn_by_volume(volume_name):
     """
@@ -1392,12 +1400,18 @@ def unmount_process(volumeName, remote_ip, protocol, user_name, password, ip):
                     response = subprocess.check_output(umount_cmd)
                     sprint("Un mount response ",response)
                     sprint(f"Trying to unmount to {local_path}")
+                    if not wait_until_unmounted(local_path):
+                        sprint(f"Unmount verification failed for {local_path}")
+                        return -1, local_path
                     return 0, local_path
 
                 elif sys.platform.startswith("linux"):
                     umount_cmd = ['sudo', 'umount','-f','-l',local_path]
                     subprocess.check_output(umount_cmd)
                     sprint(f"Trying to unmount to {local_path}")
+                    if not wait_until_unmounted(local_path):
+                        sprint(f"Unmount verification failed for {local_path}")
+                        return -1, local_path
                     return 0, local_path
                 
                 else:
