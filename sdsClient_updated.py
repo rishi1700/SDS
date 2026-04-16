@@ -300,17 +300,24 @@ def cmd_create_volume(args):
 
         hosts = getHostByProtocol(protocolId)
 
-        compute_node_data_id = [item for item in hosts if item["host_type"] == "Compute Node Group" and item["protocol_id"] == protocolId and item["name"] == compute_host_name]
+        if protocol_name in ["CIFS", "iSCSI-Chap"]:
+            compute_node_data_id = [item for item in hosts if item["host_type"] == "Compute Node Group" and item["protocol_id"] == protocolId and item["name"].startswith(compute_host_name) and item["user_name"] == user and item["pw"] == pw]
+        else:
+            compute_node_data_id = [item for item in hosts if item["host_type"] == "Compute Node Group" and item["protocol_id"] == protocolId and item["name"] == compute_host_name]
+
         if len(compute_node_data_id) == 0:
-            # Genereate random Compute Group host name
-            compute_node_name = compute_host_name
+            # Generate unique Compute Group host name
+            compute_node_name = f"{compute_host_name}_{len(hosts)+1}"
             response = create_compute_group(compute_node_name, protocolId, compute_ips, user, pw)
             if response == None:
                 print("Error in creating Compute Group")
                 return
-            
-            hosts = getHostByProtocol(protocolId)        
-            compute_node_data_id = [item for item in hosts if item["host_type"] == "Compute Node Group" and item["protocol_id"] == protocolId and item["name"] == compute_node_name]
+
+            hosts = getHostByProtocol(protocolId)
+            if protocol_name in ["CIFS", "iSCSI-Chap"]:
+                compute_node_data_id = [item for item in hosts if item["host_type"] == "Compute Node Group" and item["protocol_id"] == protocolId and item["name"] == compute_node_name and item["user_name"] == user and item["pw"] == pw]
+            else:
+                compute_node_data_id = [item for item in hosts if item["host_type"] == "Compute Node Group" and item["protocol_id"] == protocolId and item["name"] == compute_node_name]
             compute_id = compute_node_data_id[0]["id"]
         else:
             compute_id = compute_node_data_id[0]["id"]

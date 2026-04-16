@@ -9,7 +9,7 @@ except ImportError:
     if choice in ("y", "yes"):
         try:
             subprocess.check_call([
-                sys.executable, "-m", "pip", "install", "flask",  "--ignore-installed", "blinker", "--break-system-packages"
+                sys.executable, "-m", "pip", "install", "flask", "--ignore-installed", "blinker", "--break-system-packages"
             ])
             print("flask installed successfully. Restarting import...")
             import flask
