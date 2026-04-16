@@ -2031,8 +2031,12 @@ class SDSApp(tk.Tk):
         before = before or {}
         after = after or {}
 
+        print(f"[iSCSI] disk_before={before}")
+        print(f"[iSCSI] disk_after={after}")
+
         # Identify new disk numbers
         new_nums = [n for n in after.keys() if n not in before]
+        print(f"[iSCSI] new disk numbers detected: {new_nums}")
 
         # If no new disk numbers, fall back to any RAW disk that wasn't RAW before
         candidates_raw = []
@@ -2055,8 +2059,11 @@ class SDSApp(tk.Tk):
         if not candidates_raw and len(candidates_formatted) == 1:
             return self._windows_get_iscsi_drive_letter(candidates_formatted[0])
 
+        print(f"[iSCSI] candidates_raw={candidates_raw}, candidates_formatted={candidates_formatted}")
+
         # Only auto-init when we can unambiguously pick exactly one RAW disk
         if len(candidates_raw) != 1:
+            print(f"[iSCSI] Cannot auto-init: need exactly 1 RAW candidate, found {len(candidates_raw)}")
             return ""
 
         disk_num = candidates_raw[0]
@@ -2071,11 +2078,16 @@ class SDSApp(tk.Tk):
             "if ($dl) { $dl + ':' } else { '' }"
         )
 
+        print(f"[iSCSI] Running Initialize-Disk on disk {disk_num} ...")
         rc, out, err = self._run_powershell(ps, timeout=240)
         if rc == 0:
             dl = (out or "").strip()
             if len(dl) == 2 and dl[1] == ":" and dl[0].isalpha():
+                print(f"[iSCSI] Disk {disk_num} initialized and formatted. Drive: {dl}")
                 return dl
+            print(f"[iSCSI] PowerShell rc=0 but unexpected drive output: {repr(dl)}")
+        else:
+            print(f"[iSCSI] Initialize-Disk failed: rc={rc}\n  stdout={repr(out)}\n  stderr={repr(err)}")
         return ""
     def _is_real_windows_drive(self, p: str) -> bool:
         p = (p or "").strip()
@@ -2308,7 +2320,15 @@ class SDSApp(tk.Tk):
                 tmp_mp = (resp.get("mount_path") or "").strip()
                 tmp_mp = self._normalize_windows_drive(tmp_mp)
                 if not self._is_real_windows_drive(tmp_mp):
-                    disk_after = self._windows_iscsi_snapshot_disks()
+                    # Windows may take several seconds to enumerate the iSCSI disk after session is established.
+                    # Retry the snapshot until a new disk appears (up to ~16 seconds total).
+                    disk_after = {}
+                    for _snap_try in range(5):
+                        disk_after = self._windows_iscsi_snapshot_disks()
+                        if any(n not in disk_before for n in disk_after):
+                            break
+                        print(f"[iSCSI] Waiting for new disk to appear in Windows (attempt {_snap_try + 1}/5)...")
+                        time.sleep(3)
                     iscsi_drive = self._windows_iscsi_auto_init_new_raw_disk(disk_before, disk_after)
                 if iscsi_drive:
                     print(f"Windows iSCSI disk auto-initialized successfully. Drive: {iscsi_drive}")
