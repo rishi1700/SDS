@@ -1,0 +1,21 @@
+## Setup Requirements
+1) Steps to set sds
+    1) Check Storage Node details in sds_collector.py file under available_storage_nodes
+    2) Add Compute Node Details in sds_collector.py file under available_compute_nodes
+    2) Make Sure AWS_TEST is False under sds_globalSettings.py , to run correctly on client machine
+2) To Run SDS - sudo python3 sds_launcher.py -> It will run the sds_collector.py and sds_api_server.py
+3) SDS Client - sds client will run in compute server side server and it will get the compute node ip and will do these things
+    1) Create
+    2) On / Mount
+    3) Off / UnMpunt
+    4) Delete
+    5) File will be - computenode_service_client.py run this for Mount, Unmount and Delete Folder
+    6) sdsClient.py - is to test from compute server where it will pick the itself ip as compute server
+                      To run this please last lines under sdsClient.py
+
+
+
+# Run SDS Main as service
+$ sudo nano /etc/systemd/system/sds-py.service
+$ sudo systemctl daemon-reload
+$ sudo systemctl restart sds-py.service
