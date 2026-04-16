@@ -300,17 +300,25 @@ def cmd_create_volume(args):
 
         hosts = getHostByProtocol(protocolId)
 
-        compute_node_data_id = [item for item in hosts if item["host_type"] == "Compute Node Group" and item["protocol_id"] == protocolId and item["name"] == compute_host_name]
+        if protocol_name in ["CIFS", "iSCSI-Chap"]:
+            compute_node_data_id = [item for item in hosts if item["host_type"] == "Compute Node Group" and item["protocol_id"] == protocolId and item["name"].startswith(compute_host_name)  and item["user_name"] == user and item["pw"] == pw]
+        else:
+            compute_node_data_id = [item for item in hosts if item["host_type"] == "Compute Node Group" and item["protocol_id"] == protocolId and item["name"] == compute_host_name]
+        
         if len(compute_node_data_id) == 0:
             # Genereate random Compute Group host name
-            compute_node_name = compute_host_name
+            compute_node_name = f"{compute_host_name}_{len(hosts)+1}"
             response = create_compute_group(compute_node_name, protocolId, compute_ips, user, pw)
             if response == None:
                 print("Error in creating Compute Group")
                 return
             
-            hosts = getHostByProtocol(protocolId)        
-            compute_node_data_id = [item for item in hosts if item["host_type"] == "Compute Node Group" and item["protocol_id"] == protocolId and item["name"] == compute_node_name]
+            hosts = getHostByProtocol(protocolId)
+            if protocol_name in ["CIFS", "iSCSI-Chap"]:        
+                compute_node_data_id = [item for item in hosts if item["host_type"] == "Compute Node Group" and item["protocol_id"] == protocolId and item["name"] == compute_node_name and item["user_name"] == user and item["pw"] == pw]
+            else:
+                compute_node_data_id = [item for item in hosts if item["host_type"] == "Compute Node Group" and item["protocol_id"] == protocolId and item["name"] == compute_node_name] 
+            
             compute_id = compute_node_data_id[0]["id"]
         else:
             compute_id = compute_node_data_id[0]["id"]
@@ -367,7 +375,7 @@ def cmd_mount_volume(args):
 
 
         if len(volume) == 0:
-            print(f"Volume '{volumeName}' not found.")
+            print(f"Volume '{volumeName}' not found on SDS DB.")
             return
 
         selected_volume = volume[0]
@@ -398,7 +406,7 @@ def cmd_mount_volume(args):
                 print("Is Volume Mounted? : ", "Yes" if i.get("mount").get("status") else "No")
                 print("Volume Mounted Path : ", i.get("mount").get("mount_path"))
         else:
-            print("Volume Name : ",volumeName)
+            print("\nVolume Name : ",volumeName)
             for i in response.get("compute"):
                 print("Compute Node IP : ",i.get("compute_node_ip"))
                 print("Is Volume Mounted? : ", "Yes" if i.get("mount").get("status") else "No")
@@ -454,7 +462,7 @@ def cmd_unmount_volume(args):
                 print("Is Volume UnMounted? : ", "Yes" if i.get("mount").get("status") else "No")
                 print("Volume Unmounted Path : ", i.get("mount").get("unmount_path"))
         else:
-            print("Volume Name : ",volumeName)
+            print("\nVolume Name : ",volumeName)
             for i in response.get("compute"):
                 print("Compute Node IP : ",i.get("compute_node_ip"))
                 print("Is Volume UnMounted? : ", "Yes" if i.get("mount").get("status") else "No")
@@ -498,7 +506,10 @@ def cmd_delete_volume(args):
         loader_thread.join()
 
         if response.get("status") == "fail":
-            raise RuntimeError(response.get("description") or "Storage node refused to delete the volume. Unmount it first.")
+            print("\nStorage Volume Not Deleted ")
+            print("Message : ",response.get("description"))
+            print("\n")
+            return
         
         # print(f"\nStorage Volume Delete Response : {response}")
         print("\nVolume Deleted Successfully On ....")
@@ -511,7 +522,6 @@ def cmd_delete_volume(args):
 
     except Exception as e:
         print(f"Exception in deleting volume : {str(e)}")
-        raise
 
 
 # ---------------------------
@@ -629,9 +639,6 @@ def main():
 
     try:
         args.func(args)
-    except RuntimeError as e:
-        print(f"\nError: {e}")
-        sys.exit(1)
     finally:
         flask_process.terminate()
         flask_process.wait()
