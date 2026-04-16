@@ -284,7 +284,6 @@ def find_iscasi_target_iqn(remote_ip, volume_name):
 def is_mounted(path):
     try:
         if sys.platform.startswith("darwin"):
-            # Mac OS
             result = subprocess.run(
                 ["mount"],
                 stdout=subprocess.PIPE,
@@ -293,14 +292,10 @@ def is_mounted(path):
             )
             return path in result.stdout
         else:
-            # Linux
-            result = subprocess.run(
-                ["findmnt", "-T", path],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True
-            )
-            return result.returncode == 0
+            # os.path.ismount correctly checks whether `path` itself is a mount point.
+            # findmnt -T finds the *containing* filesystem, which is always non-zero
+            # even for unmounted paths, causing false positives.
+            return os.path.ismount(path)
     except Exception:
         return False
     
