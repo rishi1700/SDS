@@ -1419,11 +1419,19 @@ def unmount_process(volumeName, remote_ip, protocol, user_name, password, ip):
                     return 0, local_path
 
                 elif sys.platform.startswith("linux"):
-                    umount_cmd = ['sudo', 'umount','-f','-l',local_path]
-                    subprocess.check_output(umount_cmd)
+                    umount_cmd = ['sudo', 'umount', '-f', '-l', local_path]
+                    result = subprocess.run(
+                        umount_cmd,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        timeout=15
+                    )
                     sprint(f"Trying to unmount to {local_path}")
-                    if not wait_until_unmounted(local_path):
-                        sprint(f"Unmount verification failed for {local_path}")
+                    if result.returncode != 0:
+                        stderr_txt = (result.stderr or b"").decode(errors="replace").lower()
+                        if "not mounted" in stderr_txt or "no such file" in stderr_txt:
+                            return 0, local_path
+                        sprint(f"umount failed: {stderr_txt}")
                         return -1, local_path
                     return 0, local_path
                 
