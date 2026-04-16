@@ -2096,6 +2096,12 @@ class SDSApp(tk.Tk):
                 return dl
             print(f"[iSCSI] PowerShell rc=0 but unexpected drive output: {repr(dl)}")
         else:
+            combined = ((out or "") + (err or "")).lower()
+            if "access" in combined or "privilege" in combined or "permission" in combined or "administrator" in combined:
+                raise RuntimeError(
+                    "iSCSI disk initialization requires Administrator privileges.\n"
+                    "Please restart the application by right-clicking and selecting 'Run as administrator'."
+                )
             print(f"[iSCSI] Initialize-Disk failed: rc={rc}\n  stdout={repr(out)}\n  stderr={repr(err)}")
         return ""
     def _is_real_windows_drive(self, p: str) -> bool:
