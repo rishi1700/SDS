@@ -9,6 +9,7 @@ import time
 import tkinter as tk
 import platform
 import os
+import shutil
 import urllib.request
 import urllib.error
 from contextlib import redirect_stderr, redirect_stdout
@@ -51,6 +52,46 @@ except Exception:
     pass
 
 APP_TITLE = "GS_VolumeManager"
+
+
+def _maybe_relaunch_linux_as_root():
+    """Relaunch the GUI through pkexec on Linux so the shipped app can mount volumes.
+
+    This keeps the user flow to a single executable: launch app -> authenticate -> app opens.
+    """
+    if not sys.platform.startswith("linux"):
+        return
+    if os.geteuid() == 0:
+        return
+    if os.environ.get("GSVM_ALREADY_ELEVATED") == "1":
+        return
+
+    pkexec = shutil.which("pkexec")
+    if not pkexec:
+        return
+
+    if getattr(sys, "frozen", False):
+        relaunch_cmd = [sys.executable]
+    else:
+        relaunch_cmd = [sys.executable, str(Path(__file__).resolve())]
+
+    env_parts = [
+        f"DISPLAY={os.environ.get('DISPLAY', '')}",
+        f"XAUTHORITY={os.environ.get('XAUTHORITY', '')}",
+        f"XDG_RUNTIME_DIR={os.environ.get('XDG_RUNTIME_DIR', '')}",
+        f"DBUS_SESSION_BUS_ADDRESS={os.environ.get('DBUS_SESSION_BUS_ADDRESS', '')}",
+        f"WAYLAND_DISPLAY={os.environ.get('WAYLAND_DISPLAY', '')}",
+        "GSVM_ALREADY_ELEVATED=1",
+    ]
+
+    try:
+        result = subprocess.run(
+            [pkexec, "env", *env_parts, *relaunch_cmd],
+            check=False,
+        )
+        raise SystemExit(result.returncode)
+    except Exception:
+        return
 
 # --- Modern UI Palette and Fonts ---
 C_BG = "#0b1220"
@@ -2538,5 +2579,6 @@ class SDSApp(tk.Tk):
 
 
 if __name__ == "__main__":
+    _maybe_relaunch_linux_as_root()
     app = SDSApp()
     app.mainloop()
