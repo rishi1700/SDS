@@ -374,7 +374,7 @@ def cmd_mount_volume(args):
 
 
         if len(volume) == 0:
-            print(f"Volume '{volumeName}' not found on SDS DB.")
+            print(f"Volume '{volumeName}' not found.")
             return
 
         selected_volume = volume[0]
@@ -405,7 +405,7 @@ def cmd_mount_volume(args):
                 print("Is Volume Mounted? : ", "Yes" if i.get("mount").get("status") else "No")
                 print("Volume Mounted Path : ", i.get("mount").get("mount_path"))
         else:
-            print("\nVolume Name : ",volumeName)
+            print("Volume Name : ",volumeName)
             for i in response.get("compute"):
                 print("Compute Node IP : ",i.get("compute_node_ip"))
                 print("Is Volume Mounted? : ", "Yes" if i.get("mount").get("status") else "No")
@@ -461,7 +461,7 @@ def cmd_unmount_volume(args):
                 print("Is Volume UnMounted? : ", "Yes" if i.get("mount").get("status") else "No")
                 print("Volume Unmounted Path : ", i.get("mount").get("unmount_path"))
         else:
-            print("\nVolume Name : ",volumeName)
+            print("Volume Name : ",volumeName)
             for i in response.get("compute"):
                 print("Compute Node IP : ",i.get("compute_node_ip"))
                 print("Is Volume UnMounted? : ", "Yes" if i.get("mount").get("status") else "No")
@@ -505,10 +505,7 @@ def cmd_delete_volume(args):
         loader_thread.join()
 
         if response.get("status") == "fail":
-            print("\nStorage Volume Not Deleted ")
-            print("Message : ",response.get("description"))
-            print("\n")
-            return
+            raise RuntimeError(response.get("description") or "Storage node refused to delete the volume. Unmount it first.")
         
         # print(f"\nStorage Volume Delete Response : {response}")
         print("\nVolume Deleted Successfully On ....")
@@ -521,6 +518,7 @@ def cmd_delete_volume(args):
 
     except Exception as e:
         print(f"Exception in deleting volume : {str(e)}")
+        raise
 
 
 # ---------------------------
@@ -638,6 +636,9 @@ def main():
 
     try:
         args.func(args)
+    except RuntimeError as e:
+        print(f"\nError: {e}")
+        sys.exit(1)
     finally:
         flask_process.terminate()
         flask_process.wait()
