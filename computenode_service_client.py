@@ -762,6 +762,9 @@ def mount_cifs(remote_ip, remote_path, loc_path, protocol,user,password,wait_tim
             output = p.stdout.read()
             p.wait()
             sprint(output, 0)
+            if p.returncode != 0:
+                sprint(f"CIFS mount command failed with exit code {p.returncode}", 0)
+                return -1
             # Verify the mount actually succeeded
             if os.path.ismount(loc_path):
                 return 0
@@ -1375,9 +1378,13 @@ def unmount_process(volumeName, remote_ip, protocol, user_name, password, ip):
                     raise RuntimeError("Unsupported OS")
 
             else:
-                sprint(f"Mount path is not exists {local_path}")
-                return -1, local_path
+                sprint(f"Mount path already not mounted {local_path}")
+                return 0, local_path
     except Exception as e:
+       err_txt = str(e)
+       if sys.platform.startswith("linux") and "not mounted" in err_txt.lower():
+           sprint(f"Mount path already not mounted {local_path}")
+           return 0, local_path
        sprint(f"Unable to unmount share: {e}")
        return -1, local_path
 
