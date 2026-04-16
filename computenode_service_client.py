@@ -292,10 +292,23 @@ def is_mounted(path):
             )
             return path in result.stdout
         else:
-            # os.path.ismount correctly checks whether `path` itself is a mount point.
-            # findmnt -T finds the *containing* filesystem, which is always non-zero
-            # even for unmounted paths, causing false positives.
-            return os.path.ismount(path)
+            # os.path.ismount raises OSError (ESTALE) for stale NFS mounts,
+            # so also check /proc/mounts directly.
+            try:
+                if os.path.ismount(path):
+                    return True
+            except OSError:
+                pass
+            norm = os.path.normpath(path)
+            try:
+                with open("/proc/mounts") as f:
+                    for line in f:
+                        parts = line.split()
+                        if len(parts) >= 2 and os.path.normpath(parts[1]) == norm:
+                            return True
+            except Exception:
+                pass
+            return False
     except Exception:
         return False
 
