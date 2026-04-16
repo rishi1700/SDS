@@ -2077,14 +2077,16 @@ class SDSApp(tk.Tk):
 
         disk_num = candidates_raw[0]
 
-        # Initialize + create partition + format + capture assigned drive letter
+        # Initialize + create partition (no drive letter yet, to avoid Windows Explorer
+        # auto-format dialog racing with Format-Volume) + format + assign drive letter.
         ps = (
             f"$n={disk_num}; "
             "Initialize-Disk -Number $n -PartitionStyle GPT -ErrorAction Stop; "
-            "$p = New-Partition -DiskNumber $n -UseMaximumSize -AssignDriveLetter -ErrorAction Stop; "
+            "$p = New-Partition -DiskNumber $n -UseMaximumSize -ErrorAction Stop; "
             "Format-Volume -Partition $p -FileSystem NTFS -Confirm:$false -ErrorAction Stop | Out-Null; "
-            "$dl = ($p | Select-Object -ExpandProperty DriveLetter); "
-            "if ($dl) { $dl + ':' } else { '' }"
+            "$p | Add-PartitionAccessPath -AssignDriveLetter -ErrorAction Stop; "
+            "$dl = (Get-Partition -DiskNumber $n | Where-Object {$_.DriveLetter} | Select-Object -First 1 -ExpandProperty DriveLetter); "
+            "if ($dl) { [string]$dl + ':' } else { '' }"
         )
 
         print(f"[iSCSI] Running Initialize-Disk on disk {disk_num} ...")
@@ -2096,13 +2098,14 @@ class SDSApp(tk.Tk):
                 return dl
             print(f"[iSCSI] PowerShell rc=0 but unexpected drive output: {repr(dl)}")
         else:
+            print(f"[iSCSI] Initialize-Disk failed: rc={rc}\n  stdout={repr(out)}\n  stderr={repr(err)}")
             combined = ((out or "") + (err or "")).lower()
             if "access" in combined or "privilege" in combined or "permission" in combined or "administrator" in combined:
                 raise RuntimeError(
-                    "iSCSI disk initialization requires Administrator privileges.\n"
-                    "Please restart the application by right-clicking and selecting 'Run as administrator'."
+                    "iSCSI disk initialization failed — access denied.\n"
+                    "If not running as Administrator, right-click the app and select 'Run as administrator'.\n"
+                    f"Details: {(err or out or '').strip()[:200]}"
                 )
-            print(f"[iSCSI] Initialize-Disk failed: rc={rc}\n  stdout={repr(out)}\n  stderr={repr(err)}")
         return ""
     def _is_real_windows_drive(self, p: str) -> bool:
         p = (p or "").strip()
