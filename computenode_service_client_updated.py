@@ -759,9 +759,14 @@ def mount_cifs(remote_ip, remote_path, loc_path, protocol,user,password,wait_tim
 
             sprint (command,0)
             p = subprocess.Popen([command],shell=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
-            sprint (p.stdout.read(),0)
-            #check that loc_path is a mountpoint DIVYA
-            return 0
+            output = p.stdout.read()
+            p.wait()
+            sprint(output, 0)
+            # Verify the mount actually succeeded
+            if os.path.ismount(loc_path):
+                return 0
+            sprint(f"CIFS mount command ran but {loc_path} is not a mountpoint", 0)
+            return -1
         except Exception as err:
             #https://linux.die.net/man/8/mount.cifs
             sprint ("DeviceConnectCIFS except",err)
