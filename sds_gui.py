@@ -218,6 +218,19 @@ class SDSApp(tk.Tk):
         if self._state.get("mounted_targets"):
             self.mounted_targets = dict(self._state.get("mounted_targets") or {})
 
+        # On startup only: prune iSCSI entries with no drive letter — they cannot be
+        # automatically restored across sessions. Normal-operation pruning was removed
+        # from _update_volume_lists so that sessions connected-but-not-initialized
+        # remain accessible in the unmount dropdown during the current session.
+        if sys.platform.startswith("win"):
+            vol_meta_tmp = self.volume_meta or {}
+            for vv, lp in list(self.mounted_targets.items()):
+                proto = (vol_meta_tmp.get(vv) or {}).get("protocol") or ""
+                if str(proto).startswith("iSCSI"):
+                    drive = (str(lp or "")).strip()
+                    if not (len(drive) == 2 and drive[1] == ":" and drive[0].isalpha()):
+                        self.mounted_targets.pop(vv, None)
+
         self._build_layout()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         self._poll_logs()
@@ -1675,19 +1688,9 @@ class SDSApp(tk.Tk):
         except Exception:
             pass
         # Un-mount page: show ONLY volumes mounted on this computer
-        # Clean stale entries (e.g., iSCSI connected but never got a drive letter; app restart; manual dismount)
-        try:
-            if sys.platform.startswith("win"):
-                for vv, lp in list((self.mounted_targets or {}).items()):
-                    meta = (self.volume_meta or {}).get(vv) or {}
-                    proto = (meta.get("protocol") or "").strip()
-                    if proto.startswith("iSCSI"):
-                        # Only keep iSCSI entries that have a real drive letter
-                        if not self._is_real_windows_drive(self._normalize_windows_drive(str(lp or ""))):
-                            self.mounted_targets.pop(vv, None)
-            # If nothing left mounted, keep UI consistent
-        except Exception:
-            pass
+        # Note: iSCSI entries with empty path (session connected, disk not yet initialized)
+        # are intentionally kept so the user can disconnect them via unmount.
+        # Pruning of stale entries (e.g. after app restart) happens in _load_state at startup.
 
         mounted = sorted([v for v in (self.mounted_targets or {}).keys()])
         mounted_display = [self._vol_display(v) for v in mounted]
