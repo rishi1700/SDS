@@ -2195,6 +2195,19 @@ class SDSApp(tk.Tk):
         if not protocol:
             protocol = self._default_protocol_for_platform()
 
+        # Prompt for credentials on the main thread before spawning the background task.
+        # Tkinter dialogs must be created on the main thread; calling from a worker thread
+        # causes the dialog to not appear or behave incorrectly.
+        user = ""
+        pw = ""
+        if protocol in ("CIFS", "iSCSI-Chap"):
+            creds = self._prompt_credentials()
+            if not isinstance(creds, (tuple, list)) or len(creds) != 2:
+                return
+            user, pw = creds
+            if user is None:
+                return  # user cancelled
+
         def task():
             self._prepare_array(node)
             host = self._resolve_node_host(node)
@@ -2249,17 +2262,6 @@ class SDSApp(tk.Tk):
                     self._update_inferred_for_selected_volume()
                 self.after(0, _done)
                 return
-
-            # Credentials only when needed
-            user = ""
-            pw = ""
-            if protocol in ("CIFS", "iSCSI-Chap"):
-                creds = self._prompt_credentials()
-                if not isinstance(creds, (tuple, list)) or len(creds) != 2:
-                    raise RuntimeError("Invalid credentials response")
-                user, pw = creds
-                if user is None:
-                    raise RuntimeError("Credentials cancelled")
 
             # Ensure the local compute-node helper service is running BEFORE
             # signalling the storage node, so its callback on port 4002 succeeds.
