@@ -9,7 +9,7 @@ except ImportError:
     if choice in ("y", "yes"):
         try:
             subprocess.check_call([
-                sys.executable, "-m", "pip", "install", "flask", "--break-system-packages"
+                sys.executable, "-m", "pip", "install", "flask",  "--ignore-installed", "blinker", "--break-system-packages"
             ])
             print("flask installed successfully. Restarting import...")
             import flask
@@ -31,13 +31,7 @@ import shutil
 
 app = Flask(__name__)
 
-#
-# Security: bind to localhost by default so only the local GUI can call this service.
-# Set SDS_COMPUTE_BIND_ALL=1 to expose on LAN intentionally.
-#HOST = '127.0.0.1'
-#if os.environ.get('SDS_COMPUTE_BIND_ALL', '').strip() in ('1', 'true', 'TRUE', 'yes', 'YES'):
 HOST = '0.0.0.0' # Available for all
-
 PORT = 4002      # Flask Port
 
 SDS_VOLUME_MOUNT_PATH = "/mnt/"
@@ -119,231 +113,9 @@ def get_free_window_drive_letter(volumeName, remote_ip):
 def run_powershell(cmd):
     return subprocess.check_output(
         ["powershell", "-Command", cmd],
-        universal_newlines=True,
-        stderr=subprocess.STDOUT
+        universal_newlines=True
     )
 
-def run_powershell_json(cmd):
-    """Run PowerShell and return parsed JSON (or raise)."""
-    out = run_powershell(cmd)
-    out = out.strip()
-    if not out:
-        return None
-    return json.loads(out)
-
-
-def windows_list_disks():
-    """Return list of disks with key fields via PowerShell."""
-    ps = (
-        "Get-Disk | Select-Object Number,BusType,PartitionStyle,OperationalStatus,Size,UniqueId,SerialNumber | "
-        "ConvertTo-Json -Depth 3"
-    )
-    data = run_powershell_json(ps)
-    if data is None:
-        return []
-    # ConvertTo-Json returns dict for single object, list for many
-    return data if isinstance(data, list) else [data]
-
-
-# Defensive helper: get disk info by number
-def windows_get_disk_by_number(disk_number):
-    """Return disk dict for a disk number (or None)."""
-    ps = (
-        f"Get-Disk -Number {disk_number} | "
-        "Select-Object Number,BusType,PartitionStyle,OperationalStatus,Size,UniqueId,SerialNumber | "
-        "ConvertTo-Json -Depth 3"
-    )
-    try:
-        d = run_powershell_json(ps)
-        if d is None:
-            return None
-        return d if isinstance(d, dict) else (d[0] if d else None)
-    except Exception:
-        return None
-
-
-def windows_pick_new_raw_iscsi_disk(before, after):
-    """Pick the *new* RAW iSCSI disk by diffing before/after snapshots."""
-    before_ids = set()
-    for d in before:
-        before_ids.add(str(d.get("UniqueId") or d.get("SerialNumber") or d.get("Number")))
-
-    candidates = []
-    for d in after:
-        bus = str(d.get("BusType") or "").lower()
-        part = str(d.get("PartitionStyle") or "").upper()
-        uid = str(d.get("UniqueId") or d.get("SerialNumber") or d.get("Number"))
-        if uid in before_ids:
-            continue
-        if bus == "iscsi" and part == "RAW":
-            candidates.append(d)
-
-    if len(candidates) == 1:
-        return candidates[0]
-
-    # Fallback: if we can't diff cleanly, pick highest-number RAW iSCSI disk
-    raw_iscsi = [d for d in after if str(d.get("BusType") or "").lower() == "iscsi" and str(d.get("PartitionStyle") or "").upper() == "RAW"]
-    if not raw_iscsi:
-        return None
-
-    raw_iscsi.sort(key=lambda x: int(x.get("Number")))
-    # Only safe to auto-init if there's exactly one RAW iSCSI disk
-    if len(raw_iscsi) == 1:
-        return raw_iscsi[0]
-
-    return None
-
-
-def windows_find_disk_for_iqn(iqn):
-    """Find the RAW iSCSI disk number for a specific IQN via iscsicli SessionList.
-
-    Parses output like:
-        Target Name            : iqn.2018-04.com.cheetah:vdisk5nochapvol10
-        Devices:
-            Device Type            : Disk
-            Device Number          : 1
-    Only returns the entry where Device Type is "Disk" and Device Number >= 0.
-    """
-    try:
-        out = subprocess.check_output(["iscsicli", "SessionList"], universal_newlines=True)
-        current_target = None
-        in_devices = False
-        current_device_type = None
-
-        for line in out.splitlines():
-            stripped = line.strip()
-            if not stripped:
-                continue
-
-            if stripped.startswith("Session Id"):
-                current_target = None
-                in_devices = False
-                current_device_type = None
-
-            elif stripped.startswith("Target Name") and ":" in stripped:
-                val = stripped.split(":", 1)[1].strip()
-                if val and val.lower() != "(null)":
-                    current_target = val
-
-            elif stripped == "Devices:":
-                in_devices = True
-                current_device_type = None
-
-            elif in_devices:
-                if stripped.startswith("Device Type") and ":" in stripped:
-                    current_device_type = stripped.split(":", 1)[1].strip()
-
-                elif stripped.startswith("Device Number") and ":" in stripped:
-                    try:
-                        disk_num = int(stripped.split(":", 1)[1].strip())
-                    except ValueError:
-                        disk_num = -1
-
-                    if (current_target and current_target.lower() == iqn.lower()
-                            and current_device_type == "Disk"
-                            and disk_num >= 0):
-                        d = windows_get_disk_by_number(disk_num)
-                        if d:
-                            return d  # Return regardless of partition style
-                        current_device_type = None  # reset so we don't re-check
-    except Exception:
-        pass
-    return None
-
-
-def _windows_resolve_iscsi_drive(iqn, volume_name, before_disks):
-    """Find and initialize/format the iSCSI disk for a given IQN, return drive letter.
-
-    Strategy:
-    1. IQN lookup via iscsicli SessionList  — most accurate, works even when
-       multiple RAW disks exist or the disk was already connected before our snapshot.
-    2. before/after diff fallback           — used only when SessionList lookup fails.
-
-    For an already-formatted disk (e.g. initialized by a prior storage-node callback),
-    just retrieves the existing drive letter instead of re-formatting.
-    """
-    # --- Primary: IQN-based lookup ---
-    disk = windows_find_disk_for_iqn(iqn)
-    if disk is not None:
-        dn = int(disk.get("Number"))
-        part = str(disk.get("PartitionStyle", "")).upper()
-        bus  = str(disk.get("BusType", "")).lower()
-        if part == "RAW" and bus == "iscsi":
-            sprint("Windows iSCSI auto-init via IQN lookup", iqn)
-            drive = windows_init_and_format_disk(dn, volume_name)
-            if drive:
-                return drive
-            sprint("Windows iSCSI auto-init could not determine drive letter", "")
-            return ""
-        else:
-            # Already formatted by a previous call — just retrieve the letter
-            drive = windows_get_drive_letter_for_disk(dn)
-            if drive:
-                sprint("Windows iSCSI drive letter retrieved via IQN lookup", f"{iqn} -> {drive}")
-                return drive
-            sprint("Windows iSCSI disk found but no drive letter assigned yet", iqn)
-            return ""
-
-    # --- Fallback: before/after snapshot diff ---
-    after_disks = windows_list_disks()
-    new_disk = windows_pick_new_raw_iscsi_disk(before_disks, after_disks)
-    if new_disk is not None:
-        dn = int(new_disk.get("Number"))
-        drive = windows_init_and_format_disk(dn, volume_name)
-        if drive:
-            return drive
-        sprint("Windows iSCSI auto-init could not determine drive letter", "")
-        return ""
-
-    sprint("Windows iSCSI auto-init skipped (IQN not in SessionList, no unique RAW disk in diff)", "")
-    return ""
-
-
-def windows_get_drive_letter_for_disk(disk_number):
-    """Return the assigned drive letter (e.g. 'F:') for an already-formatted disk."""
-    ps = (
-        f"Get-Partition -DiskNumber {disk_number} -ErrorAction SilentlyContinue "
-        "| Where-Object {$_.DriveLetter} "
-        "| Select-Object -First 1 -ExpandProperty DriveLetter"
-    )
-    try:
-        out = run_powershell(ps).strip()
-        if out and len(out) == 1 and out.isalpha():
-            return out + ":"
-    except Exception:
-        pass
-    return ""
-
-
-def windows_init_and_format_disk(disk_number, label):
-    """Initialize RAW iSCSI disk, create partition, format NTFS, return drive letter.
-
-    Safety: re-check that the selected disk is still an iSCSI RAW disk before initializing.
-    """
-    d = windows_get_disk_by_number(disk_number)
-    if not d:
-        raise RuntimeError(f"Disk {disk_number} not found")
-
-    bus = str(d.get('BusType') or '').lower()
-    part = str(d.get('PartitionStyle') or '').upper()
-
-    # Only ever auto-initialize a RAW iSCSI disk
-    if bus != 'iscsi' or part != 'RAW':
-        raise RuntimeError(f"Refusing to format disk {disk_number}: BusType={bus}, PartitionStyle={part}")
-
-    # Initialize to GPT
-    run_powershell(f"Initialize-Disk -Number {disk_number} -PartitionStyle GPT -ErrorAction Stop")
-
-    # Create partition and format; capture the assigned drive letter
-    ps = (
-        f"$p = New-Partition -DiskNumber {disk_number} -UseMaximumSize -AssignDriveLetter -ErrorAction Stop; "
-        f"Format-Volume -Partition $p -FileSystem NTFS -NewFileSystemLabel '{label}' -Confirm:$false -ErrorAction Stop | Out-Null; "
-        f"($p | Get-Volume).DriveLetter"
-    )
-    drive_letter = run_powershell(ps).strip()
-    if drive_letter:
-        return f"{drive_letter}:"
-    return None
 
 def find_mount_path(remote_ip, volume_name):
     # Read all exports from the remote server using showmount
@@ -425,7 +197,7 @@ def find_window_drive_by_volume(volume_name, protocol_name):
             )
 
             for line in result.splitlines():
-                if line.strip().lower().endswith(volume_name.lower()):
+                if volume_name.lower() in line.lower():
                     parts = line.split()
                     for p in parts:
                         if p.endswith(":"):
@@ -522,12 +294,12 @@ def get_iscsi_windwos_iqn_by_volume(volume_name):
 
     iqn = None
     for line in out.splitlines():
-        if line.strip().lower().endswith(volume_name.lower()):
+        if volume_name.lower() in line.lower():
             iqn = line.strip()
             break
 
     if not iqn:
-        return None
+        return -1
     
     return iqn
 
@@ -586,7 +358,6 @@ def check_mac_atto_cli():
             return 0, p
 
     return -1, "ATTO Config Tool not found"
-
 
 def ensure_iscsid_running():
     try:
@@ -684,7 +455,7 @@ def ShowiSCSIChapMount(remote_ip, user, password, ip, volume_name):
 
             iqn = None
             for line in out.splitlines():
-                if line.strip().lower().endswith(volume_name.lower()):
+                if volume_name.lower() in line.lower():
                     iqn = line.strip()
                     break
 
@@ -693,34 +464,18 @@ def ShowiSCSIChapMount(remote_ip, user, password, ip, volume_name):
                 return -1, None
 
             sprint(f"Windows Extracted IQ for volume : {volume_name}, Remote IP : {remote_ip} -> IQN : {iqn}","")
+            
 
-            # If already connected to this target, don't try to reconnect (avoids errors + credential mismatch)
+            # Set CHAP credentials
             try:
-                sess = run_powershell_json(
-                    "Get-IscsiSession | Select-Object TargetNodeAddress,IsConnected | ConvertTo-Json -Depth 3"
-                )
-                sess_list = sess if isinstance(sess, list) else ([sess] if sess else [])
-                for s in sess_list:
-                    if str(s.get("TargetNodeAddress", "")).strip().lower() == iqn.lower() and bool(s.get("IsConnected")):
-                        sprint("Windows iSCSI session already connected", iqn)
-                        return 0, iqn
-            except Exception:
+                run_powershell(f'Connect-IscsiTarget -NodeAddress "{iqn}" -IsPersistent $true')
+
+                subprocess.run(["iscsicli", "AddTargetPortal", remote_ip], stdout=subprocess.DEVNULL)
+            except subprocess.CalledProcessError:
                 pass
 
-            # Connect with CHAP (ChapSecret must be SecureString)
-            try:
-                ps = (
-                    f"$sec = ConvertTo-SecureString '{password}' -AsPlainText -Force; "
-                    f"New-IscsiTargetPortal -TargetPortalAddress {remote_ip} -ErrorAction SilentlyContinue | Out-Null; "
-                    f"Connect-IscsiTarget -NodeAddress '{iqn}' -IsPersistent $true "
-                    f"-AuthenticationType OneWayCHAP -ChapUsername '{user}' -ChapSecret $sec -ErrorAction Stop | Out-Null"
-                )
-                run_powershell(ps)
-            except Exception as e:
-                sprint("Windows CHAP connect failed", f"{msg} Error: {e}")
-                return -1, None
+            sprint("Windows CHAP settings applied", msg)
 
-            sprint("Windows CHAP connect OK", msg)
             return 0, iqn
 
         elif sys.platform.startswith("darwin"):
@@ -738,7 +493,7 @@ def ShowiSCSIChapMount(remote_ip, user, password, ip, volume_name):
 
             iqn = None
             for line in out.splitlines():
-                if line.strip().lower().endswith(volume_name.lower()):
+                if volume_name.lower() in line.lower():
                     iqn = line.strip()
                     break
 
@@ -798,7 +553,6 @@ def ShowiSCSIChapMount(remote_ip, user, password, ip, volume_name):
 # Show iSCSI No Chap Mount 
 # ==============
 
-
 def ShowiSCSINoChapMount(remote_ip, ip,volume_name):
     msg = f"{remote_ip} {ip}"
     sprint("ShowiSCSINoChapMount", msg)
@@ -814,18 +568,10 @@ def ShowiSCSINoChapMount(remote_ip, ip,volume_name):
 
             sprint("ISCSI Service started")
 
-            # Register portal with both the PowerShell iSCSI module and iscsicli
-            # so that iscsicli ListTargets can discover the targets.
+            # Portal
             run_powershell(f"New-IscsiTargetPortal -TargetPortalAddress {remote_ip} -ErrorAction SilentlyContinue")
+            
             sprint("Windows iSCSI portal added", remote_ip)
-
-            try:
-                subprocess.run(["iscsicli", "AddTargetPortal", remote_ip], stdout=subprocess.DEVNULL)
-            except subprocess.CalledProcessError as e:
-                print(e)
-                pass
-
-            time.sleep(2)
 
             # List targets
             out = subprocess.check_output(
@@ -835,7 +581,7 @@ def ShowiSCSINoChapMount(remote_ip, ip,volume_name):
 
             iqn = None
             for line in out.splitlines():
-                if line.strip().lower().endswith(volume_name.lower()):
+                if volume_name.lower() in line.lower():
                     iqn = line.strip()
                     break
 
@@ -844,7 +590,15 @@ def ShowiSCSINoChapMount(remote_ip, ip,volume_name):
                 return -1, None
 
             sprint(f"Windows Extracted IQ for volume : {volume_name}, Remote IP : {remote_ip} -> IQN : {iqn}","")
+
+            try:
+                subprocess.run(["iscsicli", "AddTargetPortal", remote_ip], stdout=subprocess.DEVNULL)
+            except subprocess.CalledProcessError as e:
+                print(e)
+                pass
+
             sprint("Windows NoCHAP settings applied", msg)
+
             return 0, iqn
         
         elif sys.platform.startswith("darwin"):
@@ -862,7 +616,7 @@ def ShowiSCSINoChapMount(remote_ip, ip,volume_name):
 
             iqn = None
             for line in out.splitlines():
-                if line.strip().lower().endswith(volume_name.lower()):
+                if volume_name.lower() in line.lower():
                     iqn = line.strip()
                     break
 
@@ -896,7 +650,7 @@ def ShowiSCSINoChapMount(remote_ip, ip,volume_name):
             # Step 3: CHAP authentication settings
             cmd_auth = [
                 ["sudo", "iscsiadm", "-m", "node", "-T", iqn, "-p", remote_ip, "--op", "update",
-                 "-n", "node.session.auth.authmethod", "-v", "None"],
+                "-n", "node.session.auth.authmethod", "-v", "CHAP"],
             ]
 
             for cmd in cmd_auth:
@@ -1029,8 +783,16 @@ def mount_iscsi_chap(remote_ip, local_mnt_path, iqn, user, password, volume_name
     try:
         # Windows mount
         if sys.platform.startswith("win"):
-            # login handled in ShowiSCSIChapMount via Connect-IscsiTarget
-            sprint("Windows iSCSI CHAP session should be connected", iqn)
+            # login
+            subprocess.check_output([
+                "iscsicli",
+                "CHAPSecret",
+                iqn,
+                user,
+                password
+            ])
+
+            sprint("Windows iSCSI login success", iqn)
             return 0
 
         elif sys.platform.startswith("darwin"):
@@ -1059,7 +821,7 @@ def mount_iscsi_chap(remote_ip, local_mnt_path, iqn, user, password, volume_name
 
             iqn_found = None
             for line in out.splitlines():
-                if line.strip().lower().endswith(volume_name.lower()):
+                if volume_name.lower() in line.lower():
                     iqn_found = line.strip()
                     break
 
@@ -1136,6 +898,8 @@ def mount_iscsi_chap(remote_ip, local_mnt_path, iqn, user, password, volume_name
 
             sprint("macOS Mount SUCCESS", disk)
             return 0
+
+
         
         else:
             # Ubunut/Linix OS
@@ -1198,17 +962,17 @@ def mount_iscsi_nochap(remote_ip, local_mnt_path, iqn, wait_time):
 
     try:
         if sys.platform.startswith("win"):
-            try:
-                subprocess.check_output(["iscsicli", "QLoginTarget", iqn], stderr=subprocess.STDOUT, universal_newlines=True)
-            except subprocess.CalledProcessError as e:
-                output = (e.output or "").lower()
-                if "already" in output or "0xefff003f" in output:
-                    sprint("Windows iSCSI No-CHAP already logged in", iqn)
-                else:
-                    sprint("Windows iSCSI No-CHAP login failed", f"{iqn} Error: {e.output}")
-                    return -1
+            # login
+            subprocess.check_output([
+                "iscsicli",
+                "QLoginTarget",
+                iqn,
+            ])
+
             time.sleep(int(wait_time))
-            sprint("Windows iSCSI No-CHAP login success", iqn)
+
+            # bring disk online + format handled separately
+            sprint("Windows iSCSI No Chap login success", iqn)
             return 0
         
         elif sys.platform.startswith("darwin"):
@@ -1320,9 +1084,9 @@ def mount_iscsi_nochap(remote_ip, local_mnt_path, iqn, wait_time):
 # ==============
 # Mount Process functions
 # ==============
-
             
 def mount_process(volumeName, protcol_name,remote_ip, host_name, user_name, ip, password, wwn, url):
+    error_message = ""
     if sys.platform.startswith("win"): # Windows
         if protcol_name == "CIFS":
             local_mnt_path = get_free_window_drive_letter(volumeName, remote_ip)
@@ -1330,7 +1094,6 @@ def mount_process(volumeName, protcol_name,remote_ip, host_name, user_name, ip, 
         else:
             Mount_Path = get_mount_base_path()
             local_mnt_path=os.path.join(Mount_Path, volumeName)
-
     else: # Linux or Mac
         Mount_Path = get_mount_base_path()
         local_mnt_path=os.path.join(Mount_Path, volumeName)
@@ -1348,18 +1111,6 @@ def mount_process(volumeName, protcol_name,remote_ip, host_name, user_name, ip, 
         os.system("echo 3 > /proc/sys/vm/drop_caches")
     
     wait_time = 5 
-    # Windows auto-init support (snapshot disks before login)
-    before_disks = []
-    if sys.platform.startswith("win") and protcol_name in ("iSCSI-Chap", "iSCSI-NoChap"):
-        # Prefer payload flag if present (mountVolume endpoint passes it through request JSON)
-        try:
-            auto_init_disk = bool(globals().get("_AUTO_INIT_DISK", False))
-        except Exception:
-            auto_init_disk = False
-        try:
-            before_disks = windows_list_disks()
-        except Exception:
-            before_disks = []
     max_retries = 5
     myTries=0
     waitPing=True
@@ -1370,7 +1121,7 @@ def mount_process(volumeName, protcol_name,remote_ip, host_name, user_name, ip, 
             time.sleep(2)
             waitPing=False
             sprint("Unable to mount volume because the StorageArray is not reachable.")
-            return -1, "StorageArray not reachable"
+            return -1
 
     waitPing=True
     try:
@@ -1414,17 +1165,18 @@ def mount_process(volumeName, protcol_name,remote_ip, host_name, user_name, ip, 
         remote_path = find_mount_path(remote_ip, volumeName)
         if not remote_path:
             sprint(f"Could not determine mount path for volume: {volumeName}")
-            return -1, "Could not determine mount path for volume: "+volumeName
+            return -1, "Could not determine mount path for volume: "+volumeName, error_message
         res=mount_nfs(remote_ip, remote_path, local_mnt_path, protcol_name,wait_time)
         if res==0:
             waitPing=False
             sprint("NFS volume mount")
         else:
             waitPing = True
+            error_message = "Unable to mount NFS volume."
             sprint(f"Unable to mount NFS volume.{res}",myTries)
             time.sleep(2)
             myTries=myTries+1
-            return -1, local_mnt_path
+            return -1, local_mnt_path, error_message
     while (waitPing==True and  protcol_name=='CIFS'):
         share=volumeName
         user=user_name
@@ -1437,37 +1189,32 @@ def mount_process(volumeName, protcol_name,remote_ip, host_name, user_name, ip, 
             sprint("CIFS volume mount")
         else:
             waitPing = True
+            error_message = "Unable to mount CIFS volume."
             sprint(f"Unable to mount CIFS volume.{res}",myTries)
             time.sleep(2)
             myTries=myTries+1
-            return -1, local_mnt_path
+            return -1, local_mnt_path, error_message
     
     while (waitPing==True and  protcol_name=='iSCSI-Chap'):
         status, iqn = ShowiSCSIChapMount(remote_ip,user_name,password, ip,volumeName)
         if status == 0 and iqn:
             res = mount_iscsi_chap(remote_ip, local_mnt_path, iqn, user_name, password, volumeName, wait_time)
             if res==0:
-                # Optional Windows auto-init/format (only when explicitly enabled)
-                if sys.platform.startswith("win") and globals().get("_AUTO_INIT_DISK", False):
-                    try:
-                        time.sleep(2)
-                        local_mnt_path = _windows_resolve_iscsi_drive(iqn, volumeName, before_disks)
-                    except Exception as e:
-                        sprint("Windows iSCSI auto-init failed", e)
-                if sys.platform.startswith("win") and (not local_mnt_path or not str(local_mnt_path).endswith(":")):
-                    local_mnt_path = "Session Logged in successfully"
+                local_mnt_path = "Session Logged in successfully"
                 waitPing=False
                 sprint("iSCSI Chap volume mount called","")
             else:
                 waitPing = True
-                local_mnt_path = ""
+                local_mnt_path = "Unable to mount iSCSI Chap volume."
+                error_message = "Unable to mount iSCSI Chap volume."
                 sprint(f"Unable to mount iSCSI Chap volume.{res}",myTries)
                 time.sleep(2)
                 myTries=myTries+1
-                return -1, "CHAP failed or IQN not found"
+                return -1, error_message
         else:
-            sprint("Failed in CHAP or IQN not found","")
-            return -1, "CHAP failed or IQN not found"
+            error_message = "Failed in CHAP or IQN not found"
+            sprint(error_message,"")
+            return -1, local_mnt_path, error_message
 
     
     while (waitPing==True and  protcol_name=='iSCSI-NoChap'):
@@ -1476,33 +1223,26 @@ def mount_process(volumeName, protcol_name,remote_ip, host_name, user_name, ip, 
             res= mount_iscsi_nochap(remote_ip,local_mnt_path, iqn,wait_time)
 
             if res==0:
-                # Optional Windows auto-init/format (only when explicitly enabled)
-                if sys.platform.startswith("win") and globals().get("_AUTO_INIT_DISK", False):
-                    try:
-                        time.sleep(2)
-                        local_mnt_path = _windows_resolve_iscsi_drive(iqn, volumeName, before_disks)
-                    except Exception as e:
-                        sprint("Windows iSCSI auto-init failed", e)
-                if sys.platform.startswith("win") and (not local_mnt_path or not str(local_mnt_path).endswith(":")):
-                    local_mnt_path = "Session Logged in successfully"
                 waitPing=False
                 sprint("iSCSI No Chap volume mount called")
             else:
                 waitPing = True
+                error_message = "Unable to mount iSCSI No chap volume."
                 sprint(f"Unable to mount iSCSI No chap volume.{res}",myTries)
                 time.sleep(2)
                 myTries=myTries+1
-                return -1, local_mnt_path
+                return -1, error_message
         else:
-            sprint("Failed in NoCHAP or IQN not found")
-            return -1, "NoCHAP failed or IQN not found"
+            error_message = "Failed in CHAP or IQN not found"
+            sprint(error_message,"")
+            return -1, local_mnt_path, error_message
         
     if res==0:
         sprint ("write completed correctly") 
-        return 0, local_mnt_path
+        return 0, local_mnt_path, error_message
     else:
         sprint ("write completed in-correctly")
-        return -1, local_mnt_path
+        return -1, local_mnt_path, error_message
     
 
 # ==============
@@ -1515,7 +1255,7 @@ def unmount_process(volumeName, remote_ip, protocol, user_name, password, ip):
         # Windows
         if sys.platform.startswith("win"):
             if protocol == "CIFS":
-                local_path = find_window_drive_by_volume(volumeName, protocol)
+                local_path = find_window_drive_by_volume(volumeName,protocol)
                 return 0, local_path
             
             if protocol in ("iSCSI-Chap", "iSCSI-NoChap"):
@@ -1639,14 +1379,17 @@ def unmount_process(volumeName, remote_ip, protocol, user_name, password, ip):
 # Delete Process functions
 # ==============
 
-
 def deleteVolumeFolder(path, remote_ip, iqn, user_name, password, protocol_name):
     try:
         if sys.platform.startswith("win"):
             if protocol_name in ("iSCSI-Chap", "iSCSI-NoChap"):
-                # Do NOT restart the iSCSI service here; it can drop other active sessions.
-                # Deletion for iSCSI on Windows is handled via unmount/logout paths.
-                return 0
+                try:
+                    # For ISCSI-CHAP and ISCSI-NoCHAP
+                    run_powershell("Restart-Service MSiSCSI")
+                    return 0
+                except Exception as e:
+                    sprint("Unable to restart iSCSI service", e)
+                    return -1
             
             elif protocol_name == "CIFS":
                 try:
@@ -1684,18 +1427,14 @@ def deleteVolumeFolder(path, remote_ip, iqn, user_name, password, protocol_name)
         return -1
     
 
-from flask import jsonify
+
 @app.route("/mountVolume", methods=["POST"])
 def mountVolume():
-    global _AUTO_INIT_DISK
-    _AUTO_INIT_DISK = False
-
     try:
-        data = request.get_json(force=True) or {}
-
-        volumeName = data.get("volumeName")
-        protocol_name = data.get("protocol_name")
-        remote_ip = data.get("remote_ip")
+        data = request.get_json()
+        volumeName = data.get('volumeName')
+        protocol_name = data.get('protocol_name')
+        remote_ip = data.get('remote_ip')
         host_name = data.get("host_name")
         user_name = data.get("user_name")
         ip = data.get("ip")
@@ -1703,25 +1442,15 @@ def mountVolume():
         wwn = data.get("wwn")
         url = data.get("url")
 
-        # Default to True on Windows for iSCSI protocols so RAW disks are
-        # automatically initialized and formatted (suppresses the "not accessible" popup).
-        is_win_iscsi = sys.platform.startswith("win") and str(protocol_name or "").startswith("iSCSI")
-        _AUTO_INIT_DISK = bool(data.get("auto_init_disk", is_win_iscsi))
-
-        result, mount_path = mount_process(
-            volumeName, protocol_name, remote_ip, host_name, user_name, ip, password, wwn, url
-        )
-
+        result, mount_path, error_message = mount_process(volumeName, protocol_name, remote_ip, host_name,  user_name, ip, password, wwn, url)
         if result == 0:
-            return jsonify({"status": "success", "message": "Mount process completed successfully.", "mount_path": mount_path})
+            response_data = {"status": "success", "message": "Mount process completed successfully.", "mount_path" : mount_path, "error_message" :error_message}
         else:
-            return jsonify({"status": "failure", "message": "Mount process failed.", "mount_path": mount_path})
-
+            response_data = {"status": "failure", "message": "Mount process failed.", "mount_path" : mount_path, "error_message" : error_message}
+        return response_data
     except Exception as e:
-        return jsonify({"status": "failure", "message": str(e), "mount_path": "N/A"}), 500
-
-    finally:
-        _AUTO_INIT_DISK = False
+        response_data = {"status": "failure", "message": str(e), "mount_path" : "N/A", "error_message" : ""}
+        return response_data
 
 @app.route("/unmountVolume", methods=["POST"])
 def unmountVolume():
@@ -1781,3 +1510,4 @@ def TestMount():
 if __name__ == "__main__":
     # TestMount()
     app.run(debug=False,port=PORT,host=HOST)
+
