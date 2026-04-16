@@ -38,8 +38,7 @@ SDS_VOLUME_MOUNT_PATH = "/mnt/"
 
 def get_mount_base_path():
     if os.path.exists(SDS_VOLUME_MOUNT_PATH):
-        if os.access(SDS_VOLUME_MOUNT_PATH, os.W_OK | os.X_OK):
-            return SDS_VOLUME_MOUNT_PATH
+        return SDS_VOLUME_MOUNT_PATH
     return os.getcwd()
 
 def sprint (a,b=0):
@@ -154,7 +153,10 @@ def create_mount_point(path):
     wERC=0
     try:
       if not os.path.exists(path):
-        os.makedirs(path)
+        if sys.platform.startswith("linux"):
+            subprocess.run(["sudo", "mkdir", "-p", path], check=True)
+        else:
+            os.makedirs(path)
         sprint(f"Created mount point: {path}")
         return wERC
       else:
