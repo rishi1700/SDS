@@ -50,7 +50,7 @@ try:
 except Exception:
     pass
 
-APP_TITLE = "SDS-WS"
+APP_TITLE = "GS_VolumeManager"
 
 # --- Modern UI Palette and Fonts ---
 C_BG = "#0b1220"
@@ -1024,14 +1024,14 @@ class SDSApp(tk.Tk):
         home = Path.home()
         if sys.platform.startswith("win"):
             base = os.environ.get("APPDATA") or str(home / "AppData" / "Roaming")
-            return Path(base) / "SDS-WS"
+            return Path(base) / "GS_VolumeManager"
         if sys.platform.startswith("darwin"):
-            return home / "Library" / "Application Support" / "SDS-WS"
+            return home / "Library" / "Application Support" / "GS_VolumeManager"
         # Linux / other unix
         xdg = os.environ.get("XDG_CONFIG_HOME")
         if xdg:
-            return Path(xdg) / "sds-ws"
-        return home / ".config" / "sds-ws"
+            return Path(xdg) / "gs_volumemanager"
+        return home / ".config" / "gs_volumemanager"
 
     def _state_path(self) -> Path:
         return self._state_dir() / "state.json"

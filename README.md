@@ -1,6 +1,6 @@
-# SDS-WS User Guide
+# GS_VolumeManager User Guide
 
-SDS-WS is a desktop app for managing storage volumes.
+GS_VolumeManager is a desktop app for managing storage volumes.
 
 You can use it to:
 

@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VENV_DIR="${ROOT_DIR}/.venv-ubuntu"
 REQ_FILE="${ROOT_DIR}/requirements-ubuntu.txt"
-SPEC_FILE="${ROOT_DIR}/SDS-WS-linux.spec"
+SPEC_FILE="${ROOT_DIR}/GS_VolumeManager-linux.spec"
 
 if ! command -v python3 >/dev/null 2>&1; then
   echo "python3 is required."
@@ -25,4 +25,4 @@ pyinstaller --noconfirm "${SPEC_FILE}"
 echo
 echo "Build complete."
 echo "Single executable:"
-echo "  ${ROOT_DIR}/dist/SDS-WS"
+echo "  ${ROOT_DIR}/dist/GS_VolumeManager"

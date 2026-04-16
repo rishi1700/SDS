@@ -7,7 +7,7 @@ python -m PyInstaller `
   --noconfirm `
   --onefile `
   --noconsole `
-  --name SDS-WS `
+  --name GS_VolumeManager `
   --add-data "computenode_service_client.py;." `
   --add-data "sdsClient.py;." `
   --hidden-import computenode_service_client `
@@ -21,4 +21,4 @@ python -m PyInstaller `
 
 Write-Output ""
 Write-Output "Build complete."
-Write-Output "Executable: dist\SDS-WS.exe"
+Write-Output "Executable: dist\GS_VolumeManager.exe"
