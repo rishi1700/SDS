@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-Build script for GS_VolClient (gs_vol_gui.py)
+Build script for GS_VolumeManager (gs_vol_gui.py)
 
 Usage:
-    python build_gs_volclient.py          # build release executable
-    python build_gs_volclient.py --clean  # remove build/dist first
+    python build_gs_volumemanager.py          # build release executable
+    python build_gs_volumemanager.py --clean  # remove build/dist first
 
 Output:
-    dist/GS_VolClient          (Linux)
-    dist/GS_VolClient.exe      (Windows)
+    dist/GS_VolumeManager          (Linux)
+    dist/GS_VolumeManager.exe      (Windows)
 """
 
 import sys
@@ -18,7 +18,7 @@ import subprocess
 import argparse
 
 
-SPEC_FILE = "GS_VolClient.spec"
+SPEC_FILE = "GS_VolumeManager.spec"
 DIST_DIR  = "dist"
 BUILD_DIR = "build"
 
@@ -45,8 +45,6 @@ def clean():
         if os.path.exists(d):
             print(f"Removing {d}/")
             shutil.rmtree(d)
-    for f in ("GS_VolClient.spec",):
-        pass  # keep the spec; only remove build artefacts
 
 
 def build():
@@ -61,7 +59,7 @@ def build():
     run([sys.executable, "-m", "PyInstaller", "--clean", SPEC_FILE])
 
     # Locate the output binary
-    exe_name = "GS_VolClient.exe" if sys.platform.startswith("win") else "GS_VolClient"
+    exe_name = "GS_VolumeManager.exe" if sys.platform.startswith("win") else "GS_VolumeManager"
     output = os.path.join(DIST_DIR, exe_name)
 
     if os.path.exists(output):
@@ -75,12 +73,12 @@ def build():
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Build GS_VolClient executable")
+    parser = argparse.ArgumentParser(description="Build GS_VolumeManager executable")
     parser.add_argument("--clean", action="store_true",
                         help="Remove build/ and dist/ before building")
     args = parser.parse_args()
 
-    print("=== GS_VolClient build ===")
+    print("=== GS_VolumeManager build ===")
     print(f"Platform : {sys.platform}")
     print(f"Python   : {sys.version.split()[0]}")
     print()

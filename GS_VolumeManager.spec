@@ -1,27 +1,28 @@
 # -*- mode: python ; coding: utf-8 -*-
+import sys
 from PyInstaller.utils.hooks import collect_all
 
 datas = []
 binaries = []
-hiddenimports = ['computenode_service_client', 'flask', 'werkzeug.serving', 'zeroconf']
-tmp_ret = collect_all('flask')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
-tmp_ret = collect_all('werkzeug')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
-tmp_ret = collect_all('zeroconf')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+hiddenimports = ['gsVolClient', 'mount_services']
 
+# Pull in requests and its runtime deps
+for pkg in ('requests', 'urllib3', 'certifi', 'charset_normalizer', 'idna'):
+    d, b, h = collect_all(pkg)
+    datas    += d
+    binaries += b
+    hiddenimports += h
 
 a = Analysis(
-    ['sds_gui.py'],
-    pathex=[],
+    ['gs_vol_gui.py'],
+    pathex=['.'],
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=['flask', 'werkzeug', 'zeroconf'],
     noarchive=False,
     optimize=0,
 )
@@ -40,7 +41,7 @@ exe = EXE(
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=False,
+    console=False,                   # no black console window on Windows
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
