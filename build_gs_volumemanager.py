@@ -36,8 +36,10 @@ def ensure_packages():
             __import__(pkg.replace("-", "_"))
         except ImportError:
             print(f"Installing {pkg} ...")
-            run([sys.executable, "-m", "pip", "install", pkg,
-                 "--break-system-packages"])
+            cmd = [sys.executable, "-m", "pip", "install", pkg]
+            if not sys.platform.startswith("win"):
+                cmd.append("--break-system-packages")
+            run(cmd)
 
 
 def clean():

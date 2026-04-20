@@ -20,10 +20,10 @@ try:
 except ImportError:
     import subprocess
     try:
-        subprocess.check_call(
-            [sys.executable, "-m", "pip", "install", "requests", "--break-system-packages"],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-        )
+        _pip_cmd = [sys.executable, "-m", "pip", "install", "requests"]
+        if not sys.platform.startswith("win"):
+            _pip_cmd.append("--break-system-packages")
+        subprocess.check_call(_pip_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         import requests
     except Exception:
         pass
@@ -55,7 +55,10 @@ def _run_powershell(cmd, timeout=90):
 # Main application
 # ---------------------------------------------------------------------------
 
-PROTOCOLS = ["NFS", "CIFS", "iSCSI-Chap", "iSCSI-NoChap"]
+ALL_PROTOCOLS = ["NFS", "CIFS", "iSCSI-Chap", "iSCSI-NoChap"]
+# NFS is not supported on Windows without extra tools
+PROTOCOLS = ["CIFS", "iSCSI-Chap", "iSCSI-NoChap"] if sys.platform.startswith("win") else ALL_PROTOCOLS
+DEFAULT_PROTO = "CIFS" if sys.platform.startswith("win") else "NFS"
 DEFAULT_SNODE = "192.168.30.55"
 
 
@@ -123,7 +126,7 @@ class GsVolApp(tk.Tk):
         )
 
         ttk.Label(tab, text="Protocol:").grid(row=2, column=0, sticky="w", pady=3)
-        self._create_proto = tk.StringVar(value="NFS")
+        self._create_proto = tk.StringVar(value=DEFAULT_PROTO)
         proto_cb = ttk.Combobox(
             tab, textvariable=self._create_proto, values=PROTOCOLS, state="readonly", width=16
         )
@@ -185,7 +188,7 @@ class GsVolApp(tk.Tk):
         )
 
         ttk.Label(tab, text="Protocol:").grid(row=1, column=0, sticky="w", pady=3)
-        self._mount_proto = tk.StringVar(value="NFS")
+        self._mount_proto = tk.StringVar(value=DEFAULT_PROTO)
         ttk.Combobox(
             tab, textvariable=self._mount_proto, values=PROTOCOLS, state="readonly", width=16
         ).grid(row=1, column=1, sticky="w", padx=(6, 0))
@@ -231,7 +234,7 @@ class GsVolApp(tk.Tk):
         )
 
         ttk.Label(tab, text="Protocol:").grid(row=1, column=0, sticky="w", pady=3)
-        self._delete_proto = tk.StringVar(value="NFS")
+        self._delete_proto = tk.StringVar(value=DEFAULT_PROTO)
         ttk.Combobox(
             tab, textvariable=self._delete_proto, values=PROTOCOLS, state="readonly", width=16
         ).grid(row=1, column=1, sticky="w", padx=(6, 0))
