@@ -625,6 +625,12 @@ class GSVolumeManagerApp(tk.Tk):
                 raise RuntimeError(response.get("message") or "Volume Action Error Code: -1")
 
             host = response.get("host") or {}
+            self._log(
+                "CIFS backend host info : "
+                f"user_name={host.get('user_name', '')!r}, "
+                f"pw_present={'yes' if bool(host.get('pw')) else 'no'}, "
+                f"iqn={host.get('iqn', '')!r}"
+            )
             mount_response = mount_services.mountVolume(
                 volume["name"],
                 volume["protocolName"],

@@ -702,22 +702,22 @@ def mount_cifs(remote_ip, remote_path, loc_path, protocol,user,password,wait_tim
                     f"/user:{user}"
                 ]
 
-                subprocess.run(cmd, check=True)
+                result = subprocess.run(cmd, check=True, capture_output=True, text=True)
                 sprint("CIFS mounted on Windows")
-                return 0
+                return 0, (result.stdout or "").strip()
             
         
             elif sys.platform.startswith("darwin"):
                 # Mac OS
                 if os.path.ismount(loc_path):
-                    return -1
+                    return -1, f"{loc_path} is already mounted."
                 command = f"mount_smbfs //{user}:{password}@{remote_ip}/{remote_path} {loc_path}"
             elif sys.platform.startswith("linux"):
                 # Linux
                 # arg0=" -t cifs -o username=guest -o password=hello123 //192.168.30.6/cifs1 /mnt/remote/mnt/cifs1"
 
                 if os.path.ismount(loc_path):
-                    return -1
+                    return -1, f"{loc_path} is already mounted."
                 arg1='-t cifs '
                 arg4=' -o username='
                 arg5='password='
@@ -730,19 +730,31 @@ def mount_cifs(remote_ip, remote_path, loc_path, protocol,user,password,wait_tim
 
             sprint (command,0)
             p = subprocess.Popen([command],shell=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
-            sprint (p.stdout.read(),0)
+            output = p.stdout.read()
+            sprint (output,0)
+            rc = p.wait()
+            if rc != 0:
+                try:
+                    detail = output.decode(errors="ignore").strip()
+                except Exception:
+                    detail = str(output).strip()
+                return -1, detail or f"CIFS mount command failed with exit code {rc}"
             #check that loc_path is a mountpoint DIVYA
-            return 0
+            return 0, ""
         except Exception as err:
             #https://linux.die.net/man/8/mount.cifs
             sprint ("DeviceConnectCIFS except",err)
             sprint ((json.JSONEncoder().encode({'status':'fail','description':'invalid remote directory'})),0)
             # process1 = subprocess.check_output(["rmdir",arg4])
-            return -1
+            if isinstance(err, subprocess.CalledProcessError):
+                detail = (getattr(err, "stderr", "") or getattr(err, "stdout", "") or str(err)).strip()
+            else:
+                detail = str(err)
+            return -1, detail
  
     except Exception as e:
        sprint(f"Unable to mount share: {e}")
-       return -1
+       return -1, str(e)
 
 # ==============
 # Mount iSCSI
@@ -1163,14 +1175,16 @@ def mount_process(volumeName, protcol_name,remote_ip, user_name, ip, password):
         password=password
         res=ShowCifsMount(remote_ip,share,user,password)
         
-        res=mount_cifs(remote_ip, share, local_mnt_path, protcol_name,user,password,wait_time)
+        res, cifs_detail = mount_cifs(remote_ip, share, local_mnt_path, protcol_name,user,password,wait_time)
         if res==0:
             waitPing=False
             sprint("CIFS volume mount")
         else:
             waitPing = True
-            error_message = "Unable to mount CIFS volume."
+            error_message = cifs_detail or "Unable to mount CIFS volume."
             sprint(f"Unable to mount CIFS volume.{res}",myTries)
+            if cifs_detail:
+                sprint("CIFS mount detail", cifs_detail)
             time.sleep(2)
             myTries=myTries+1
             return -1, local_mnt_path, error_message
