@@ -1,20 +1,12 @@
 # -*- mode: python ; coding: utf-8 -*-
 
-from PyInstaller.utils.hooks import collect_all
-
-datas = []
+datas = [('mount_services.py', '.')]
 binaries = []
-hiddenimports = ['computenode_service_client', 'flask', 'werkzeug.serving', 'zeroconf']
-
-for pkg in ('flask', 'werkzeug', 'zeroconf'):
-    d, b, h = collect_all(pkg)
-    datas += d
-    binaries += b
-    hiddenimports += h
+hiddenimports = []
 
 
 a = Analysis(
-    ['sds_gui.py'],
+    ['gs_volume_gui.py'],
     pathex=[],
     binaries=binaries,
     datas=datas,

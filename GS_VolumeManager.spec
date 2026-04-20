@@ -1,19 +1,12 @@
 # -*- mode: python ; coding: utf-8 -*-
-from PyInstaller.utils.hooks import collect_all
 
-datas = []
+datas = [('mount_services.py', '.')]
 binaries = []
-hiddenimports = ['computenode_service_client', 'flask', 'werkzeug.serving', 'zeroconf']
-tmp_ret = collect_all('flask')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
-tmp_ret = collect_all('werkzeug')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
-tmp_ret = collect_all('zeroconf')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+hiddenimports = []
 
 
 a = Analysis(
-    ['sds_gui.py'],
+    ['gs_volume_gui.py'],
     pathex=[],
     binaries=binaries,
     datas=datas,
