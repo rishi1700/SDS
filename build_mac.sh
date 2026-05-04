@@ -7,6 +7,7 @@ TARGET_DIR="${TARGET_DIR:-$HOME/SDS}"
 VENV_DIR="${VENV_DIR:-$TARGET_DIR/.venv-macos}"
 REQ_FILE="$TARGET_DIR/requirements-ubuntu.txt"
 SPEC_FILE="$TARGET_DIR/GS_VolumeManager-linux.spec"
+APP_PATH="$TARGET_DIR/dist/GS_VolumeManager"
 
 echo "Starting GS_VolumeManager Mac build..."
 echo "Repo   : $REPO_URL"
@@ -56,11 +57,18 @@ python -m pip install --upgrade pip
 python -m pip install -r "$REQ_FILE" pyinstaller
 
 echo "Building app..."
+cd "$TARGET_DIR"
 pyinstaller --noconfirm "$SPEC_FILE"
 
-chmod +x "$TARGET_DIR/dist/GS_VolumeManager"
+if [[ ! -f "$APP_PATH" ]]; then
+  echo "Build finished, but the expected app was not found:"
+  echo "  $APP_PATH"
+  exit 1
+fi
+
+chmod +x "$APP_PATH"
 
 echo
 echo "Build complete."
 echo "App:"
-echo "  $TARGET_DIR/dist/GS_VolumeManager"
+echo "  $APP_PATH"
