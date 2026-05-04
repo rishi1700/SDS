@@ -6,7 +6,6 @@ BRANCH="${BRANCH:-gs-volume-gui}"
 TARGET_DIR="${TARGET_DIR:-$HOME/SDS}"
 VENV_DIR="${VENV_DIR:-$TARGET_DIR/.venv-macos}"
 REQ_FILE="$TARGET_DIR/requirements-ubuntu.txt"
-SPEC_FILE="$TARGET_DIR/GS_VolumeManager-linux.spec"
 APP_PATH="$TARGET_DIR/dist/GS_VolumeManager"
 
 echo "Starting GS_VolumeManager Mac build..."
@@ -58,7 +57,21 @@ python -m pip install -r "$REQ_FILE" pyinstaller
 
 echo "Building app..."
 cd "$TARGET_DIR"
-pyinstaller --noconfirm "$SPEC_FILE"
+rm -rf "$TARGET_DIR/build" "$TARGET_DIR/dist/GS_VolumeManager"
+pyinstaller \
+  --noconfirm \
+  --onefile \
+  --windowed \
+  --name GS_VolumeManager \
+  --add-data "mount_services.py:." \
+  --hidden-import mount_services \
+  --hidden-import requests \
+  --collect-all requests \
+  --collect-all urllib3 \
+  --collect-all certifi \
+  --collect-all charset_normalizer \
+  --collect-all idna \
+  gs_volume_gui.py
 
 if [[ ! -f "$APP_PATH" ]]; then
   echo "Build finished, but the expected app was not found:"
