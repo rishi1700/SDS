@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import os
 import queue
+import re
 import shutil
 import socket
 import subprocess
@@ -26,6 +27,13 @@ PROTOCOLS = {
 }
 
 PROTOCOLS_BY_ID = {value: key for key, value in PROTOCOLS.items()}
+
+VOLUME_NAME_PATTERNS = {
+    "CIFS": re.compile(r"^[a-zA-Z0-9{!$ .@(~#)}&%_]*$"),
+    "NFS": re.compile(r"^[a-z0-9]*$"),
+    "iSCSI-Chap": re.compile(r"^[a-z0-9]*$"),
+    "iSCSI-NoChap": re.compile(r"^[a-z0-9]*$"),
+}
 
 C_BG = "#0b1220"
 C_CARD = "#121b2d"
@@ -70,7 +78,37 @@ FONT_BODY = FONTS["body"]
 FONT_MONO = FONTS["mono"]
 
 
-def _maybe_relaunch_linux_as_root():
+def _maybe_relaunch_with_privileges():
+    if sys.platform.startswith("win"):
+        try:
+            import ctypes
+
+            if ctypes.windll.shell32.IsUserAnAdmin():
+                return
+
+            if getattr(sys, "frozen", False):
+                executable = sys.executable
+                params = subprocess.list2cmdline(sys.argv[1:])
+            else:
+                executable = sys.executable
+                params = subprocess.list2cmdline([str(Path(__file__).resolve()), *sys.argv[1:]])
+
+            result = ctypes.windll.shell32.ShellExecuteW(
+                None,
+                "runas",
+                executable,
+                params,
+                str(Path.cwd()),
+                1,
+            )
+            if result > 32:
+                raise SystemExit(0)
+        except SystemExit:
+            raise
+        except Exception:
+            return
+        return
+
     if not sys.platform.startswith("linux"):
         return
     if os.geteuid() == 0:
@@ -107,8 +145,8 @@ class GSVolumeManagerApp(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title(APP_TITLE)
-        self.geometry("1024x720")
-        self.minsize(1024, 720)
+        self.geometry("1180x760")
+        self.minsize(1100, 760)
         self.configure(bg=C_BG)
 
         self.log_queue = queue.Queue()
@@ -169,24 +207,24 @@ class GSVolumeManagerApp(tk.Tk):
         header_canvas.pack(fill="both", expand=True)
         self._header_canvas = header_canvas
         self._draw_header_gradient()
-        self._header_title_id = header_canvas.create_text(
-            20,
-            28,
-            anchor="w",
+        self._header_title_label = tk.Label(
+            header,
             text=f"{APP_TITLE} — {socket.gethostname()}",
-            fill="#ffffff",
+            bg=C_BG,
+            fg="#ffffff",
             font=FONT_TITLE,
         )
-        self._header_current_id = header_canvas.create_text(
-            0,
-            28,
-            anchor="e",
-            text=self.current_array_var.get(),
-            fill=C_MUTED,
+        self._header_title_label.place(x=20, rely=0.5, anchor="w")
+        self._header_current_label = tk.Label(
+            header,
+            textvariable=self.current_array_var,
+            bg=C_BG,
+            fg=C_MUTED,
             font=FONT_HEADER,
         )
-        self.current_array_var.trace_add("write", lambda *_: header_canvas.itemconfigure(self._header_current_id, text=self.current_array_var.get()))
+        self._header_current_label.place(relx=1.0, x=-20, rely=0.5, anchor="e")
         header.bind("<Configure>", lambda _e: self._draw_header_gradient())
+        self.after(100, self._draw_header_gradient)
 
         body = tk.Frame(self, bg=C_BG)
         body.pack(fill="both", expand=True, padx=16, pady=16)
@@ -206,6 +244,8 @@ class GSVolumeManagerApp(tk.Tk):
         self.content.grid_columnconfigure(0, weight=1)
         self.page_container = tk.Frame(self.content, bg=C_BG)
         self.page_container.grid(row=0, column=0, sticky="nsew")
+        self.page_container.grid_rowconfigure(0, weight=1)
+        self.page_container.grid_columnconfigure(0, weight=1)
 
         self.frames = {}
         nav_items = [
@@ -247,8 +287,11 @@ class GSVolumeManagerApp(tk.Tk):
             b = int(start[2] + ((end[2] - start[2]) * ratio))
             color = f"#{r:02x}{g:02x}{b:02x}"
             canvas.create_rectangle(0, i, width, i + 1, outline=color, fill=color, tags="gradient")
-        if getattr(self, "_header_current_id", None):
-            canvas.coords(self._header_current_id, width - 20, 28)
+        canvas.lower("gradient")
+        if getattr(self, "_header_title_label", None):
+            self._header_title_label.lift()
+        if getattr(self, "_header_current_label", None):
+            self._header_current_label.lift()
 
     def _build_config_frame(self):
         frame = ttk.Frame(self.page_container, style="Card.TFrame")
@@ -256,7 +299,7 @@ class GSVolumeManagerApp(tk.Tk):
         self.frames["config"] = frame
 
         form = ttk.LabelFrame(frame, text="Storage Node")
-        form.pack(fill="x", pady=8)
+        form.pack(fill="x", padx=0, pady=(0, 8))
 
         self.storage_entry = ttk.Entry(form)
         self.storage_entry.grid(row=0, column=0, padx=8, pady=8, sticky="ew")
@@ -265,7 +308,7 @@ class GSVolumeManagerApp(tk.Tk):
         form.columnconfigure(0, weight=1)
 
         list_frame = ttk.LabelFrame(frame, text="Configured Storage Nodes")
-        list_frame.pack(fill="both", expand=True, pady=8)
+        list_frame.pack(fill="both", expand=True, padx=0, pady=8)
 
         self.storage_list = tk.Listbox(
             list_frame,
@@ -286,7 +329,7 @@ class GSVolumeManagerApp(tk.Tk):
         self.frames["create"] = frame
 
         form = ttk.LabelFrame(frame, text="Create Volume")
-        form.pack(fill="x", pady=8)
+        form.pack(fill="x", padx=0, pady=8)
 
         self.create_name = ttk.Entry(form)
         self.create_size = ttk.Entry(form)
@@ -302,8 +345,21 @@ class GSVolumeManagerApp(tk.Tk):
         self._grid_row(form, 3, "Protocol", self.create_protocol)
         self._grid_row(form, 4, "User", self.create_user)
         self._grid_row(form, 5, "Password", self.create_pw)
-        ttk.Label(form, text="Credentials are required for CIFS and iSCSI-Chap.", style="Muted.TLabel").grid(row=6, column=0, columnspan=2, padx=8, pady=(2, 0), sticky="w")
-        ttk.Button(form, text="Create Volume", style="Primary.TButton", command=self._on_create).grid(row=7, column=0, columnspan=2, pady=10)
+        ttk.Button(form, text="Create Volume", style="Primary.TButton", command=self._on_create).grid(row=6, column=0, columnspan=2, pady=(6, 4))
+        rules_frame = ttk.Frame(form, style="Card.TFrame")
+        rules_frame.grid(row=7, column=0, columnspan=2, padx=8, pady=(0, 4), sticky="ew")
+        rules_frame.columnconfigure(0, weight=1)
+        helper_lines = [
+            "Rules: volume name 1-12 chars, not 'system', no hyphen.",
+            "NFS/iSCSI: lowercase letters and numbers only. CIFS: user/password required and all three values must differ.",
+        ]
+        for index, line in enumerate(helper_lines):
+            ttk.Label(
+                rules_frame,
+                text=line,
+                style="Muted.TLabel",
+                justify="left",
+            ).grid(row=index, column=0, sticky="w", pady=(0, 1))
 
     def _build_mount_frame(self):
         frame = ttk.Frame(self.page_container, style="Card.TFrame")
@@ -311,7 +367,7 @@ class GSVolumeManagerApp(tk.Tk):
         self.frames["mount"] = frame
 
         form = ttk.LabelFrame(frame, text="Mount Volume (Locally on this Computer)")
-        form.pack(fill="x", pady=8)
+        form.pack(fill="x", padx=0, pady=8)
 
         self.mount_name = ttk.Combobox(form, values=[], state="readonly")
         self.mount_node = ttk.Combobox(form, values=[], state="readonly")
@@ -326,7 +382,7 @@ class GSVolumeManagerApp(tk.Tk):
         self.frames["unmount"] = frame
 
         form = ttk.LabelFrame(frame, text="Un-mount Volume (Locally)")
-        form.pack(fill="x", pady=8)
+        form.pack(fill="x", padx=0, pady=8)
 
         self.unmount_name = ttk.Combobox(form, values=[], state="readonly")
         self.unmount_node = ttk.Combobox(form, values=[], state="readonly")
@@ -341,7 +397,7 @@ class GSVolumeManagerApp(tk.Tk):
         self.frames["delete"] = frame
 
         form = ttk.LabelFrame(frame, text="Delete Volume")
-        form.pack(fill="x", pady=8)
+        form.pack(fill="x", padx=0, pady=8)
 
         self.delete_name = ttk.Combobox(form, values=[], state="readonly")
         self.delete_node = ttk.Combobox(form, values=[], state="readonly")
@@ -408,6 +464,16 @@ class GSVolumeManagerApp(tk.Tk):
     def _log(self, message):
         self.log_queue.put(message)
 
+    def _show_info(self, title, message):
+        self.lift()
+        self.focus_force()
+        messagebox.showinfo(title, message, parent=self)
+
+    def _show_error(self, title, message):
+        self.lift()
+        self.focus_force()
+        messagebox.showerror(title, message, parent=self)
+
     def _set_busy(self, busy, message=""):
         self._busy_count = max(0, self._busy_count + (1 if busy else -1))
         if self._busy_count > 0:
@@ -420,9 +486,11 @@ class GSVolumeManagerApp(tk.Tk):
 
         def worker():
             try:
-                task()
+                result_message = task()
+                if result_message:
+                    self.after(0, lambda msg=result_message: self._show_info("Success", msg))
             except Exception as exc:
-                self.after(0, lambda: messagebox.showerror("Error", str(exc)))
+                self.after(0, lambda err=str(exc): self._show_error("Error", err))
                 self._log(f"Error: {type(exc).__name__}: {exc}")
             finally:
                 self.after(0, lambda: self._set_busy(False))
@@ -576,6 +644,33 @@ class GSVolumeManagerApp(tk.Tk):
         if protocol in ("CIFS", "iSCSI-Chap") and (not user or not password):
             messagebox.showwarning("Missing credentials", "User and password are required for CIFS and iSCSI-Chap.")
             return
+        if len(name) < 1 or len(name) > 12:
+            messagebox.showwarning("Invalid volume name", "Volume name must be between 1 and 12 characters.")
+            return
+        if name.lower() == "system":
+            messagebox.showwarning("Invalid volume name", "Volume name cannot be 'system'.")
+            return
+        if "-" in name:
+            messagebox.showwarning("Invalid volume name", 'Volume name cannot contain "-".')
+            return
+        pattern = VOLUME_NAME_PATTERNS.get(protocol)
+        if pattern and not pattern.match(name):
+            if protocol == "CIFS":
+                msg = "CIFS volume name may contain letters, numbers, spaces, underscore, and supported special characters."
+            elif protocol == "NFS":
+                msg = "NFS volume name may contain lowercase letters and numbers only."
+            else:
+                msg = "iSCSI volume name may contain lowercase letters and numbers only."
+            messagebox.showwarning("Invalid volume name", msg)
+            return
+        if protocol == "CIFS":
+            lowered = {name.lower(), user.lower(), password.lower()}
+            if len(lowered) < 3:
+                messagebox.showwarning(
+                    "Invalid CIFS values",
+                    "For CIFS, volume name, username, and password must be different values.",
+                )
+                return
 
         def task():
             self._log(f"Selected Protocol :  {protocol}")
@@ -597,6 +692,7 @@ class GSVolumeManagerApp(tk.Tk):
             self._log(f"Storage Node: {node}")
             self._log(f"Pool Name: {pool_name}")
             self.after(0, self._refresh_volumes)
+            return f"Volume '{name}' created successfully."
 
         self._run_task(task, "Creating volume...")
 
@@ -645,6 +741,7 @@ class GSVolumeManagerApp(tk.Tk):
             self._log("Volume Mounted Successfully On ....")
             self._log(f"Volume Name :  {volume['name']}")
             self._log(f"Volume Mounted Path :  {mount_response.get('mount_path')}")
+            return f"Volume '{volume['name']}' mounted successfully.\nPath: {mount_response.get('mount_path')}"
 
         self._run_task(task, "Mounting volume...")
 
@@ -671,6 +768,7 @@ class GSVolumeManagerApp(tk.Tk):
             self._log("Volume Unmounted Successfully On ....")
             self._log(f"Volume Name :  {volume['name']}")
             self._log(f"Volume Unmounted Path :  {unmount_response.get('unmount_path')}")
+            return f"Volume '{volume['name']}' unmounted successfully."
 
         self._run_task(task, "Unmounting volume...")
 
@@ -678,7 +776,14 @@ class GSVolumeManagerApp(tk.Tk):
         node = self._require_node(self.delete_node.get())
         volume = self._selected_volume(self.delete_name)
 
-        if not messagebox.askyesno("Delete volume", f"Delete '{volume['name']}'?"):
+        confirm_message = (
+            f"Delete volume '{volume['name']}'?\n\n"
+            "This will delete the volume from the storage node.\n"
+            "The app will also try to remove the local mount folder or drive mapping if one exists.\n\n"
+            "Make sure the volume is unmounted before deleting.\n"
+            "Do you want to continue?"
+        )
+        if not messagebox.askyesno("Delete volume", confirm_message, parent=self):
             return
 
         def task():
@@ -697,6 +802,7 @@ class GSVolumeManagerApp(tk.Tk):
             self._log(f"Message :  {response.get('message')}")
             self._log(f"Folder Deleted Message :  {delete_response.get('message')}")
             self.after(0, self._refresh_volumes)
+            return f"Volume '{volume['name']}' deleted successfully."
 
         self._run_task(task, "Deleting volume...")
 
@@ -705,6 +811,6 @@ class GSVolumeManagerApp(tk.Tk):
 
 
 if __name__ == "__main__":
-    _maybe_relaunch_linux_as_root()
+    _maybe_relaunch_with_privileges()
     app = GSVolumeManagerApp()
     app.mainloop()

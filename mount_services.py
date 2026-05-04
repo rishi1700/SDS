@@ -83,6 +83,71 @@ def get_free_window_drive_letter(volumeName, remote_ip):
     return None
 
 
+def list_windows_net_use_connections():
+    connections = []
+    try:
+        result = subprocess.check_output(
+            ["cmd", "/c", "net", "use"],
+            universal_newlines=True,
+            stderr=subprocess.STDOUT,
+        )
+    except Exception:
+        return connections
+
+    for line in result.splitlines():
+        parts = line.split()
+        drive = None
+        remote = None
+        for p in parts:
+            if p.endswith(":"):
+                drive = p
+            elif p.startswith("\\\\"):
+                remote = p.rstrip("\\")
+        if remote:
+            connections.append({"drive": drive, "remote": remote})
+    return connections
+
+
+def disconnect_windows_server_connections(remote_ip, keep_remote=None):
+    server_prefix = f"\\\\{remote_ip}\\".lower()
+    keep_remote = (keep_remote or "").lower().rstrip("\\")
+    disconnected = []
+
+    for conn in list_windows_net_use_connections():
+        remote = (conn.get("remote") or "").lower().rstrip("\\")
+        if not remote.startswith(server_prefix):
+            continue
+        if keep_remote and remote == keep_remote:
+            continue
+
+        target = conn.get("drive") or conn.get("remote")
+        if not target:
+            continue
+        try:
+            subprocess.run(
+                ["cmd", "/c", "net", "use", target, "/delete", "/y"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            disconnected.append(target)
+        except Exception as err:
+            sprint("Unable to disconnect Windows CIFS mapping", f"{target}: {err}")
+    return disconnected
+
+
+def run_windows_net_use(drive, remote_share, user, password):
+    cmd = [
+        "cmd", "/c",
+        "net", "use",
+        drive,
+        remote_share,
+        password,
+        f"/user:{user}"
+    ]
+    return subprocess.run(cmd, check=True, capture_output=True, text=True)
+
+
 def run_powershell(cmd):
     return subprocess.check_output(
         ["powershell", "-Command", cmd],
@@ -370,8 +435,7 @@ def ShowCifsMount(host_iqn,share,user,password):
     arg3="-U"
     arg4=user+"%"+password
     arg5="-g"
-    arg6='--option='
-    arg7="'client min protocol=SMB2'"
+    arg6='--option=client min protocol=SMB2'
     try:
         if sys.platform.startswith("win"):
             # Windows
@@ -380,16 +444,20 @@ def ShowCifsMount(host_iqn,share,user,password):
         
         else:
             # Linux or Mac
-            process1 = subprocess.check_output(["smbclient",arg6,arg7,arg1,arg2,arg3,arg4,arg5])
+            process1 = subprocess.check_output(
+                ["smbclient", arg6, arg1, arg2, arg3, arg4, arg5],
+                stderr=subprocess.STDOUT,
+            )
             sprint (process1,0)
-            if process1.find(share)!=-1:
+            output = process1.decode(errors="ignore")
+            if share in output:
                 sprint ("CIFS mnt exported",msg)
                 status=0
             else:
                 status=-1
                 sprint ("CIFS mnt NOT exported",msg)
     except Exception as err:
-        sprint ("ShowCifsMount except",msg)
+        sprint ("ShowCifsMount except",f"{msg}: {err}")
         return -1
         
     return status
@@ -693,18 +761,26 @@ def mount_cifs(remote_ip, remote_path, loc_path, protocol,user,password,wait_tim
         try:
             if sys.platform.startswith("win"):
                 # Windows
-                cmd = [
-                    "cmd", "/c",
-                    "net", "use",
-                    loc_path,
-                    f"\\\\{remote_ip}\\{remote_path}",
-                    password,
-                    f"/user:{user}"
-                ]
+                remote_share = f"\\\\{remote_ip}\\{remote_path}"
+                sprint("Windows CIFS remote share", remote_share)
+                disconnected = disconnect_windows_server_connections(remote_ip, keep_remote=remote_share)
+                if disconnected:
+                    sprint("Windows CIFS disconnected prior mappings", ", ".join(disconnected))
+                    time.sleep(1)
 
-                result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-                sprint("CIFS mounted on Windows")
-                return 0, (result.stdout or "").strip()
+                try:
+                    result = run_windows_net_use(loc_path, remote_share, user, password)
+                    sprint("CIFS mounted on Windows")
+                    return 0, (result.stdout or "").strip()
+                except subprocess.CalledProcessError as err:
+                    detail = (err.stderr or err.stdout or str(err)).strip()
+                    sprint("Windows CIFS first attempt failed", detail)
+                    if "System error 53" in detail:
+                        time.sleep(2)
+                        result = run_windows_net_use(loc_path, remote_share, user, password)
+                        sprint("CIFS mounted on Windows after retry")
+                        return 0, (result.stdout or "").strip()
+                    raise
             
         
             elif sys.platform.startswith("darwin"):
@@ -1174,6 +1250,10 @@ def mount_process(volumeName, protcol_name,remote_ip, user_name, ip, password):
         user=user_name
         password=password
         res=ShowCifsMount(remote_ip,share,user,password)
+        if res != 0:
+            error_message = f"CIFS share //{remote_ip}/{share} is not exported or cannot be listed."
+            sprint(error_message)
+            return -1, local_mnt_path, error_message
         
         res, cifs_detail = mount_cifs(remote_ip, share, local_mnt_path, protcol_name,user,password,wait_time)
         if res==0:

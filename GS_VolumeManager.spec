@@ -1,9 +1,16 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+from PyInstaller.utils.hooks import collect_all
+
 datas = [('mount_services.py', '.')]
 binaries = []
-hiddenimports = []
+hiddenimports = ['mount_services', 'requests']
 
+for pkg in ('requests', 'urllib3', 'certifi', 'charset_normalizer', 'idna'):
+    pkg_datas, pkg_binaries, pkg_hiddenimports = collect_all(pkg)
+    datas += pkg_datas
+    binaries += pkg_binaries
+    hiddenimports += pkg_hiddenimports
 
 a = Analysis(
     ['gs_volume_gui.py'],

@@ -22,6 +22,8 @@ python -m pip install -r "${REQ_FILE}" pyinstaller
 
 pyinstaller --noconfirm "${SPEC_FILE}"
 
+chmod +x "${ROOT_DIR}/dist/GS_VolumeManager"
+
 echo
 echo "Build complete."
 echo "Single executable:"
