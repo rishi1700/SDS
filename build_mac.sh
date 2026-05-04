@@ -7,6 +7,7 @@ TARGET_DIR="${TARGET_DIR:-$HOME/SDS}"
 VENV_DIR="${VENV_DIR:-$TARGET_DIR/.venv-macos}"
 REQ_FILE="$TARGET_DIR/requirements-ubuntu.txt"
 APP_PATH="$TARGET_DIR/dist/GS_VolumeManager"
+PYTHON_BIN="${PYTHON_BIN:-}"
 
 echo "Starting GS_VolumeManager Mac build..."
 echo "Repo   : $REPO_URL"
@@ -18,10 +19,22 @@ if ! command -v git >/dev/null 2>&1; then
   exit 1
 fi
 
-if ! command -v python3 >/dev/null 2>&1; then
+if [[ -z "$PYTHON_BIN" ]]; then
+  if [[ -x "/opt/homebrew/bin/python3" ]]; then
+    PYTHON_BIN="/opt/homebrew/bin/python3"
+  elif [[ -x "/usr/local/bin/python3" ]]; then
+    PYTHON_BIN="/usr/local/bin/python3"
+  elif command -v python3 >/dev/null 2>&1; then
+    PYTHON_BIN="$(command -v python3)"
+  fi
+fi
+
+if [[ -z "$PYTHON_BIN" || ! -x "$PYTHON_BIN" ]]; then
   echo "python3 is required."
   exit 1
 fi
+
+echo "Python : $PYTHON_BIN"
 
 if [[ -e "$TARGET_DIR" && ! -d "$TARGET_DIR/.git" ]]; then
   echo "Target directory exists but is not a git repository:"
@@ -44,9 +57,14 @@ else
   git -C "$TARGET_DIR" pull --ff-only origin "$BRANCH"
 fi
 
+if [[ -f "$VENV_DIR/pyvenv.cfg" ]] && ! grep -q "$(dirname "$PYTHON_BIN")" "$VENV_DIR/pyvenv.cfg"; then
+  echo "Recreating virtual environment with selected Python..."
+  rm -rf "$VENV_DIR"
+fi
+
 if [[ ! -d "$VENV_DIR" ]]; then
   echo "Creating virtual environment..."
-  python3 -m venv "$VENV_DIR"
+  "$PYTHON_BIN" -m venv "$VENV_DIR"
 fi
 
 source "$VENV_DIR/bin/activate"

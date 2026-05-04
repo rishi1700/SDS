@@ -7,6 +7,10 @@ import socket
 import subprocess
 import sys
 import threading
+
+if sys.platform.startswith("darwin"):
+    os.environ.setdefault("TK_SILENCE_DEPRECATION", "1")
+
 import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox, ttk
@@ -163,6 +167,7 @@ class GSVolumeManagerApp(tk.Tk):
         self.storage_entry.insert(0, DEFAULT_STORAGE_HINT)
         self._poll_logs()
         self._show_frame("config")
+        self.after(100, self._finish_initial_render)
 
     def _apply_theme(self):
         style = ttk.Style(self)
@@ -214,6 +219,7 @@ class GSVolumeManagerApp(tk.Tk):
             fg="#ffffff",
             font=FONT_TITLE,
         )
+        self._header_title_label.configure(text=f"{APP_TITLE} - {socket.gethostname()}")
         self._header_title_label.place(x=20, rely=0.5, anchor="w")
         self._header_current_label = tk.Label(
             header,
@@ -257,6 +263,13 @@ class GSVolumeManagerApp(tk.Tk):
         ]
         self.nav_buttons = {}
         for label, key in nav_items:
+            label = {
+                "config": "Configuration",
+                "create": "Create Volume",
+                "mount": "Mount Volume",
+                "unmount": "Un-mount Volume",
+                "delete": "Delete Volume",
+            }.get(key, label)
             btn = ttk.Button(nav, text=label, style="Nav.TButton", command=lambda k=key: self._show_frame(k))
             btn.pack(fill="x", pady=6, padx=2)
             self.nav_buttons[key] = btn
@@ -437,6 +450,12 @@ class GSVolumeManagerApp(tk.Tk):
         for name, frame in self.frames.items():
             frame.tkraise() if name == key else None
             self.nav_buttons[name].configure(style="NavActive.TButton" if name == key else "Nav.TButton")
+
+    def _finish_initial_render(self):
+        self.update_idletasks()
+        self._draw_header_gradient()
+        self.deiconify()
+        self.lift()
 
     def _platform_protocols(self):
         if sys.platform.startswith("win"):
