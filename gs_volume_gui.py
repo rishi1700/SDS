@@ -171,7 +171,7 @@ class GSVolumeManagerApp(tk.Tk):
 
     def _apply_theme(self):
         style = ttk.Style(self)
-        style.theme_use("clam")
+        style.theme_use("aqua" if sys.platform.startswith("darwin") else "clam")
         style.configure(".", font=FONT_BODY)
         style.configure("TFrame", background=C_BG)
         style.configure("Card.TFrame", background=C_CARD)

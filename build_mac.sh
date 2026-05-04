@@ -9,6 +9,63 @@ REQ_FILE="$TARGET_DIR/requirements-ubuntu.txt"
 APP_PATH="$TARGET_DIR/dist/GS_VolumeManager"
 PYTHON_BIN="${PYTHON_BIN:-}"
 
+python_tk_version() {
+  "$1" -c 'import tkinter; print(tkinter.TkVersion)' 2>/dev/null || true
+}
+
+is_supported_tk() {
+  case "$1" in
+    8.6*|8.7*|9.*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+select_python() {
+  local candidate
+  local tk_version
+  local candidates=(
+    "/opt/homebrew/opt/python@3.13/bin/python3.13"
+    "/opt/homebrew/opt/python@3.12/bin/python3.12"
+    "/opt/homebrew/opt/python@3.11/bin/python3.11"
+    "/opt/homebrew/bin/python3"
+    "/usr/local/opt/python@3.13/bin/python3.13"
+    "/usr/local/opt/python@3.12/bin/python3.12"
+    "/usr/local/opt/python@3.11/bin/python3.11"
+    "/usr/local/bin/python3"
+    "/Library/Frameworks/Python.framework/Versions/3.13/bin/python3"
+    "/Library/Frameworks/Python.framework/Versions/3.12/bin/python3"
+    "/Library/Frameworks/Python.framework/Versions/3.11/bin/python3"
+  )
+
+  if [[ -n "$PYTHON_BIN" ]]; then
+    candidates=("$PYTHON_BIN" "${candidates[@]}")
+  fi
+
+  for candidate in "${candidates[@]}"; do
+    if [[ -x "$candidate" ]]; then
+      tk_version="$(python_tk_version "$candidate")"
+      if is_supported_tk "$tk_version"; then
+        PYTHON_BIN="$candidate"
+        return 0
+      fi
+      echo "Skipping $candidate because it uses Tk $tk_version."
+    fi
+  done
+
+  return 1
+}
+
+install_homebrew_python_tk() {
+  if ! command -v brew >/dev/null 2>&1; then
+    return 1
+  fi
+
+  echo "No Python with Tk 8.6+ was found. Trying Homebrew Python/Tk..."
+  brew install python@3.12 tcl-tk python-tk@3.12 || \
+    brew install python@3.13 tcl-tk python-tk@3.13 || \
+    brew install python tcl-tk
+}
+
 echo "Starting GS_VolumeManager Mac build..."
 echo "Repo   : $REPO_URL"
 echo "Branch : $BRANCH"
@@ -19,22 +76,24 @@ if ! command -v git >/dev/null 2>&1; then
   exit 1
 fi
 
-if [[ -z "$PYTHON_BIN" ]]; then
-  if [[ -x "/opt/homebrew/bin/python3" ]]; then
-    PYTHON_BIN="/opt/homebrew/bin/python3"
-  elif [[ -x "/usr/local/bin/python3" ]]; then
-    PYTHON_BIN="/usr/local/bin/python3"
-  elif command -v python3 >/dev/null 2>&1; then
-    PYTHON_BIN="$(command -v python3)"
-  fi
+if ! select_python; then
+  install_homebrew_python_tk || true
+  select_python || {
+    echo "A Python build with Tk 8.6+ is required for the Mac GUI build."
+    echo "The Apple system Python usually uses deprecated Tk 8.5 and can produce a blank app window."
+    echo "Install Homebrew Python/Tk, then rerun this command:"
+    echo "  brew install python@3.12 tcl-tk python-tk@3.12"
+    exit 1
+  }
 fi
 
 if [[ -z "$PYTHON_BIN" || ! -x "$PYTHON_BIN" ]]; then
-  echo "python3 is required."
+  echo "python3 with Tk 8.6+ is required."
   exit 1
 fi
 
 echo "Python : $PYTHON_BIN"
+echo "Tk     : $(python_tk_version "$PYTHON_BIN")"
 
 if [[ -e "$TARGET_DIR" && ! -d "$TARGET_DIR/.git" ]]; then
   echo "Target directory exists but is not a git repository:"
